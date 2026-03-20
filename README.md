@@ -13,6 +13,8 @@ When the V8 old-generation heap accumulates gigabytes of long-lived objects, a s
 
 Shared references work transparently: when you `get` a nested container, the returned object shares the same underlying Rust allocation — mutations are immediately visible through all references, no copy involved.
 
+The trade-off is that data stored in OffHeap containers is invisible to the GC and will **not** be reclaimed automatically. Memory is freed only when the last JavaScript reference to a container is garbage collected (which drops the underlying `Arc`). If you hold a long-lived reference — e.g. a module-level variable — you are responsible for calling `.clear()` or reassigning the variable when the data is no longer needed.
+
 ## Install
 
 ```bash
@@ -161,6 +163,16 @@ inner.get('a') // → 99
 | `null` / `undefined`                   | ✓                      | ✗          | ✓       | ✓           |
 | `OffHeapObject` / `OffHeapMap` / `OffHeapArray` / `OffHeapSet` | ✓ | ✗ | ✗ | ✗ |
 | Plain JS objects / functions / Symbols | ✗                      | ✗          | ✗       | ✗           |
+
+## Benchmark
+
+See [benchmark/bench.ts](./benchmark/bench.ts) for a GC pause benchmark comparing 20M live objects on the V8 heap vs. in an `OffHeapArray`.
+
+```bash
+yarn bench
+```
+
+With 20M long-lived elements, a forced full GC averages **~160ms** with a plain JS array vs. **~1ms** with `OffHeapArray` — roughly a **100× reduction** in GC pause time.
 
 ## Build from source
 
