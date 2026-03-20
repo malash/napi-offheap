@@ -5,7 +5,7 @@ use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 
 use crate::convert::{js_to_persistent, js_to_primitive, lock_err, prim_to_unknown, to_unknown, val_to_unknown};
-use crate::types::OffHeapMap;
+use crate::types::{OffHeapMap, OffHeapValue, PrimitiveValue};
 
 #[napi]
 impl OffHeapMap {
@@ -67,22 +67,23 @@ impl OffHeapMap {
   #[napi]
   pub fn keys(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard.keys().map(|k| prim_to_unknown(raw_env, k)).collect()
+    let keys: Vec<PrimitiveValue> = self.inner.lock().map_err(lock_err)?.keys().cloned().collect();
+    keys.iter().map(|k| prim_to_unknown(raw_env, k)).collect()
   }
 
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard.values().map(|v| val_to_unknown(raw_env, v)).collect()
+    let values: Vec<OffHeapValue> = self.inner.lock().map_err(lock_err)?.values().cloned().collect();
+    values.iter().map(|v| val_to_unknown(raw_env, v)).collect()
   }
 
   #[napi]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard
+    let entries: Vec<(PrimitiveValue, OffHeapValue)> =
+      self.inner.lock().map_err(lock_err)?.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    entries
       .iter()
       .map(|(k, v)| {
         let js_key = prim_to_unknown(raw_env, k)?;

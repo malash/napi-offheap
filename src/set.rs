@@ -5,7 +5,7 @@ use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 
 use crate::convert::{js_to_primitive, lock_err, prim_to_unknown};
-use crate::types::OffHeapSet;
+use crate::types::{OffHeapSet, PrimitiveValue};
 
 #[napi]
 impl OffHeapSet {
@@ -53,8 +53,8 @@ impl OffHeapSet {
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard.iter().map(|p| prim_to_unknown(raw_env, p)).collect()
+    let values: Vec<PrimitiveValue> = self.inner.lock().map_err(lock_err)?.iter().cloned().collect();
+    values.iter().map(|p| prim_to_unknown(raw_env, p)).collect()
   }
 
   // Lock is released before each callback so the callback can mutate the set without deadlock.
