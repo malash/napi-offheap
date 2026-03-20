@@ -5,7 +5,7 @@ use napi_derive::napi;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::convert::{js_to_object_key, js_to_persistent, to_unknown, val_to_unknown};
+use crate::convert::{array_to_unknown, js_to_object_key, js_to_persistent, str_to_unknown, undefined_to_unknown, val_to_unknown};
 use crate::types::{OffHeapObject, OffHeapValue};
 
 #[napi]
@@ -37,7 +37,7 @@ impl OffHeapObject {
     let k = js_to_object_key(key)?;
     let val = self.inner.lock().get(&k).cloned();
     match val {
-      None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
+      None => undefined_to_unknown(raw_env),
       Some(v) => val_to_unknown(raw_env, &v),
     }
   }
@@ -85,12 +85,11 @@ impl OffHeapObject {
     entries
       .iter()
       .map(|(k, v)| {
-        let raw_key = unsafe { <&str>::to_napi_value(raw_env, k.as_str())? };
-        let js_key = unsafe { to_unknown(raw_env, raw_key) };
+        let js_key = str_to_unknown(raw_env, k.as_str())?;
         let js_val = val_to_unknown(raw_env, v)?;
         let env_obj = Env::from_raw(raw_env);
         let arr = Array::from_vec(&env_obj, vec![js_key, js_val])?;
-        Ok(unsafe { to_unknown(raw_env, arr.raw()) })
+        Ok(array_to_unknown(raw_env, arr))
       })
       .collect()
   }
@@ -113,7 +112,7 @@ impl OffHeapObject {
         None => break,
         Some((key, val)) => {
           let js_val = val_to_unknown(raw_env, &val)?;
-          let js_key = unsafe { to_unknown(raw_env, <&str>::to_napi_value(raw_env, &key)?) };
+          let js_key = str_to_unknown(raw_env, &key)?;
           callback.call(FnArgs { data: (js_val, js_key) })?;
           next_index = self
             .inner

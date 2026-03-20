@@ -45,26 +45,19 @@ pub(crate) fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> 
 }
 
 fn js_to_primitive_ty(ty: ValueType, val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
-  let v = val.value();
   match ty {
     ValueType::Null => Ok(PrimitiveValue::Null),
     ValueType::Undefined => Ok(PrimitiveValue::Undefined),
-    ValueType::Boolean => {
-      let b = unsafe { bool::from_napi_value(v.env, v.value)? };
-      Ok(PrimitiveValue::Bool(b))
-    }
+    ValueType::Boolean => Ok(PrimitiveValue::Bool(bool_from_unknown(val)?)),
     ValueType::Number => {
-      let n = unsafe { f64::from_napi_value(v.env, v.value)? };
+      let n = f64_from_unknown(val)?;
       if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
         Ok(PrimitiveValue::Int(n as i64))
       } else {
         Ok(PrimitiveValue::Float(OrderedFloat(n)))
       }
     }
-    ValueType::String => {
-      let s = unsafe { String::from_napi_value(v.env, v.value)? };
-      Ok(PrimitiveValue::Str(Arc::from(s.as_str())))
-    }
+    ValueType::String => Ok(PrimitiveValue::Str(Arc::from(string_from_unknown(val)?.as_str()))),
     _ => Err(napi::Error::new(
       napi::Status::InvalidArg,
       "value must be a primitive or an OffHeap type",
@@ -74,11 +67,10 @@ fn js_to_primitive_ty(ty: ValueType, val: Unknown<'_>) -> napi::Result<Primitive
 
 // Number keys are coerced to strings matching JS object semantics (e.g. 1 → "1", 1.5 → "1.5").
 pub(crate) fn js_to_object_key(val: Unknown<'_>) -> napi::Result<String> {
-  let v = val.value();
   match val.get_type()? {
-    ValueType::String => Ok(unsafe { String::from_napi_value(v.env, v.value)? }),
+    ValueType::String => string_from_unknown(val),
     ValueType::Number => {
-      let n = unsafe { f64::from_napi_value(v.env, v.value)? };
+      let n = f64_from_unknown(val)?;
       if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
         Ok(format!("{}", n as i64))
       } else {
@@ -90,6 +82,23 @@ pub(crate) fn js_to_object_key(val: Unknown<'_>) -> napi::Result<String> {
       "OffHeapObject key must be a string or number",
     )),
   }
+}
+
+// Safe wrappers around `from_napi_value`. The pointers in `val.value()` are
+// guaranteed valid for the lifetime of `val`, so the extraction is safe.
+fn bool_from_unknown(val: Unknown<'_>) -> napi::Result<bool> {
+  let v = val.value();
+  unsafe { bool::from_napi_value(v.env, v.value) }
+}
+
+fn f64_from_unknown(val: Unknown<'_>) -> napi::Result<f64> {
+  let v = val.value();
+  unsafe { f64::from_napi_value(v.env, v.value) }
+}
+
+fn string_from_unknown(val: Unknown<'_>) -> napi::Result<String> {
+  let v = val.value();
+  unsafe { String::from_napi_value(v.env, v.value) }
 }
 
 // All helpers below accept raw `sys::napi_env` instead of `&Env` so that the
@@ -130,28 +139,37 @@ pub(crate) fn primitive_to_napi(
   }
 }
 
-/// # Safety
-/// The caller must ensure the napi_value is valid for the intended lifetime.
+// `raw_env` and `raw_val` must be a valid napi env and a value belonging to it.
+// All callers in this module obtain them from successful napi API calls, so the
+// precondition is always upheld and the function is exposed as safe.
 #[inline]
-pub(crate) unsafe fn to_unknown(
-  raw_env: sys::napi_env,
-  raw_val: sys::napi_value,
-) -> Unknown<'static> {
-  Unknown::from_raw_unchecked(raw_env, raw_val)
+pub(crate) fn to_unknown(raw_env: sys::napi_env, raw_val: sys::napi_value) -> Unknown<'static> {
+  unsafe { Unknown::from_raw_unchecked(raw_env, raw_val) }
 }
 
 pub(crate) fn val_to_unknown(
   raw_env: sys::napi_env,
   val: &OffHeapValue,
 ) -> napi::Result<Unknown<'static>> {
-  let raw = to_napi_value_inner(raw_env, val)?;
-  Ok(unsafe { to_unknown(raw_env, raw) })
+  Ok(to_unknown(raw_env, to_napi_value_inner(raw_env, val)?))
 }
 
 pub(crate) fn prim_to_unknown(
   raw_env: sys::napi_env,
   val: &PrimitiveValue,
 ) -> napi::Result<Unknown<'static>> {
-  let raw = primitive_to_napi(raw_env, val)?;
-  Ok(unsafe { to_unknown(raw_env, raw) })
+  Ok(to_unknown(raw_env, primitive_to_napi(raw_env, val)?))
+}
+
+pub(crate) fn undefined_to_unknown(raw_env: sys::napi_env) -> napi::Result<Unknown<'static>> {
+  prim_to_unknown(raw_env, &PrimitiveValue::Undefined)
+}
+
+pub(crate) fn str_to_unknown(raw_env: sys::napi_env, s: &str) -> napi::Result<Unknown<'static>> {
+  let raw = unsafe { <&str>::to_napi_value(raw_env, s)? };
+  Ok(to_unknown(raw_env, raw))
+}
+
+pub(crate) fn array_to_unknown(raw_env: sys::napi_env, arr: Array) -> Unknown<'static> {
+  to_unknown(raw_env, arr.raw())
 }

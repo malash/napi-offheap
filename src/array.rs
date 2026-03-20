@@ -4,8 +4,8 @@ use napi_derive::napi;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::convert::{js_to_persistent, to_unknown, val_to_unknown};
-use crate::types::{OffHeapArray, OffHeapValue};
+use crate::convert::{js_to_persistent, prim_to_unknown, undefined_to_unknown, val_to_unknown};
+use crate::types::{OffHeapArray, OffHeapValue, PrimitiveValue};
 
 #[napi]
 impl OffHeapArray {
@@ -33,7 +33,7 @@ impl OffHeapArray {
     let raw_env = env.raw();
     let val = self.inner.lock().pop();
     match val {
-      None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
+      None => undefined_to_unknown(raw_env),
       Some(v) => val_to_unknown(raw_env, &v),
     }
   }
@@ -43,7 +43,7 @@ impl OffHeapArray {
     let raw_env = env.raw();
     let val = self.inner.lock().get(index as usize).cloned();
     match val {
-      None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
+      None => undefined_to_unknown(raw_env),
       Some(v) => val_to_unknown(raw_env, &v),
     }
   }
@@ -108,10 +108,8 @@ impl OffHeapArray {
       let val = self.inner.lock().get(index).cloned();
       if let Some(val) = val {
         let js_val = val_to_unknown(raw_env, &val)?;
-        let js_idx = unsafe {
-          let idx_u32 = u32::try_from(index).unwrap_or(u32::MAX);
-          to_unknown(raw_env, u32::to_napi_value(raw_env, idx_u32)?)
-        };
+        let idx_u32 = u32::try_from(index).unwrap_or(u32::MAX);
+        let js_idx = prim_to_unknown(raw_env, &PrimitiveValue::Int(idx_u32 as i64))?;
         callback.call(FnArgs { data: (js_val, js_idx) })?;
       }
     }

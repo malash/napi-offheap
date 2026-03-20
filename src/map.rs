@@ -5,7 +5,7 @@ use napi_derive::napi;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::convert::{js_to_persistent, js_to_primitive, prim_to_unknown, to_unknown, val_to_unknown};
+use crate::convert::{array_to_unknown, js_to_persistent, js_to_primitive, prim_to_unknown, undefined_to_unknown, val_to_unknown};
 use crate::types::{OffHeapMap, OffHeapValue, PrimitiveValue};
 
 #[napi]
@@ -37,7 +37,7 @@ impl OffHeapMap {
     let k = js_to_primitive(key)?;
     let val = self.inner.lock().get(&k).cloned();
     match val {
-      None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
+      None => undefined_to_unknown(raw_env),
       Some(v) => val_to_unknown(raw_env, &v),
     }
   }
@@ -91,7 +91,7 @@ impl OffHeapMap {
         let js_val = val_to_unknown(raw_env, v)?;
         let env_obj = Env::from_raw(raw_env);
         let arr = Array::from_vec(&env_obj, vec![js_key, js_val])?;
-        Ok(unsafe { to_unknown(raw_env, arr.raw()) })
+        Ok(array_to_unknown(raw_env, arr))
       })
       .collect()
   }
