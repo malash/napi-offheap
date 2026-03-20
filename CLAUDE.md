@@ -86,6 +86,7 @@ pub type SharedObject = IndexMap<String, OffHeapValue>;
 **为什么 Set 只允许 PrimitiveValue**：Rust `HashSet` 要求 `Hash + Eq`，JS 对象没有稳定 hash，强行支持会引入语义不一致。
 
 **为什么 `Arc<Mutex<T>>`**：
+
 - `Arc`：多个 JS 壳可共享同一份数据
 - `Mutex`：`#[napi]` 方法接收 `&self`，需要内部可变性
 - 当前单线程 Node.js 场景下 Mutex 无竞争开销
@@ -969,14 +970,14 @@ _generated.d.ts   — napi build 自动生成，gitignored，不对外发布
 
 ## 11. 错误语义
 
-| 操作 | error.code | 触发条件 | error.message |
-|------|-----------|---------|---------------|
-| set/push 传入普通 JS 对象 | `InvalidArg` | Object 但非 OffHeap 类型 | `plain JS objects are not accepted; wrap with OffHeapMap/Array/Set/Object` |
-| set/push/add 传入函数、Symbol 等 | `InvalidArg` | 不可识别的值类型 | `value must be a primitive or an OffHeap type` |
-| OffHeapSet.add 传入普通对象 | `InvalidArg` | Set 只接受基本类型 | `value must be a primitive or an OffHeap type` |
-| OffHeapObject.set/get/has/delete 传入非 string/number key | `InvalidArg` | boolean、null、object 等 | `OffHeapObject key must be a string or number` |
-| OffHeapArray.set 越界 | `GenericFailure` | index >= length | `index 5 out of bounds (length 3)` |
-| 任意操作 Mutex 中毒 | `GenericFailure` | Rust panic 后 | `lock poisoned: ...` |
+| 操作                                                      | error.code       | 触发条件                 | error.message                                                              |
+| --------------------------------------------------------- | ---------------- | ------------------------ | -------------------------------------------------------------------------- |
+| set/push 传入普通 JS 对象                                 | `InvalidArg`     | Object 但非 OffHeap 类型 | `plain JS objects are not accepted; wrap with OffHeapMap/Array/Set/Object` |
+| set/push/add 传入函数、Symbol 等                          | `InvalidArg`     | 不可识别的值类型         | `value must be a primitive or an OffHeap type`                             |
+| OffHeapSet.add 传入普通对象                               | `InvalidArg`     | Set 只接受基本类型       | `value must be a primitive or an OffHeap type`                             |
+| OffHeapObject.set/get/has/delete 传入非 string/number key | `InvalidArg`     | boolean、null、object 等 | `OffHeapObject key must be a string or number`                             |
+| OffHeapArray.set 越界                                     | `GenericFailure` | index >= length          | `index 5 out of bounds (length 3)`                                         |
+| 任意操作 Mutex 中毒                                       | `GenericFailure` | Rust panic 后            | `lock poisoned: ...`                                                       |
 
 ---
 

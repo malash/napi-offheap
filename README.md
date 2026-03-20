@@ -41,22 +41,24 @@ const user = new OffHeapObject<User>()
 
 user.set('name', 'alice').set('age', 30) // chainable
 user.get('name') // → 'alice'  (type: string | undefined)
-user.get('age')  // → 30      (type: number | undefined)
+user.get('age') // → 30      (type: number | undefined)
 user.has('name') // → true
 user.delete('name') // → true
 
-user.size      // getter → number
-user.keys()    // → string[]
-user.values()  // → User[keyof User][]
+user.size // getter → number
+user.keys() // → string[]
+user.values() // → User[keyof User][]
 user.entries() // → [string, User[keyof User]][]
 
-user.forEach((value, key) => { /* key is string */ })
+user.forEach((value, key) => {
+  /* key is string */
+})
 
 // Number keys are accepted and coerced to strings
-user.set(1, 'one')   // stored as key "1"
-user.get(1)          // → 'one'
-user.get('1')        // → 'one'  (same key)
-user.keys()          // → ['1']
+user.set(1, 'one') // stored as key "1"
+user.get(1) // → 'one'
+user.get('1') // → 'one'  (same key)
+user.keys() // → ['1']
 ```
 
 > **vs `OffHeapMap<string, V>`**: `OffHeapObject<T>` provides per-key TypeScript types via `T[K]`. `OffHeapMap<K, V>` supports any primitive key type (including `boolean`, `null`, `undefined`) and keeps keys as their original type.
@@ -72,17 +74,19 @@ const map = new OffHeapMap<string, number>()
 
 map.set('a', 1).set('b', 2) // returns this — chainable
 
-map.get('a')    // → 1  (type: number | undefined)
-map.has('a')    // → true
+map.get('a') // → 1  (type: number | undefined)
+map.has('a') // → true
 map.delete('a') // → true (false if not found)
 map.clear()
 
-map.size       // getter → number
-map.keys()     // → string[]
-map.values()   // → number[]
-map.entries()  // → [string, number][]
+map.size // getter → number
+map.keys() // → string[]
+map.values() // → number[]
+map.entries() // → [string, number][]
 
-map.forEach((value: number, key: string) => { /* ... */ })
+map.forEach((value: number, key: string) => {
+  /* ... */
+})
 
 // Number keys work too — stored as number, not coerced
 const byId = new OffHeapMap<number, string>()
@@ -100,15 +104,17 @@ import { OffHeapArray } from 'napi-offheap'
 const arr = new OffHeapArray<number>()
 
 arr.push(1).push(2).push(3) // chainable
-arr.pop()   // → 3  (type: number | undefined)
-arr.get(0)  // → 1  (type: number | undefined)
+arr.pop() // → 3  (type: number | undefined)
+arr.get(0) // → 1  (type: number | undefined)
 arr.set(0, 99) // throws if index out of bounds
-arr.length  // getter → number
+arr.length // getter → number
 
 // splice(start, deleteCount, items) → removed elements
 const removed: number[] = arr.splice(1, 1, [10, 20])
 
-arr.forEach((value: number, index: number) => { /* ... */ })
+arr.forEach((value: number, index: number) => {
+  /* ... */
+})
 ```
 
 ### `OffHeapSet<T>`
@@ -123,15 +129,17 @@ import { OffHeapSet } from 'napi-offheap'
 const set = new OffHeapSet<number>()
 
 set.add(1).add(2).add(3) // chainable
-set.has(1)    // → true
+set.has(1) // → true
 set.delete(1) // → true
 set.clear()
 
-set.size      // getter → number
-set.values()  // → number[]
+set.size // getter → number
+set.values() // → number[]
 
 // callback receives (value, value) per JS Set.forEach spec
-set.forEach((value: number, _value: number) => { /* ... */ })
+set.forEach((value: number, _value: number) => {
+  /* ... */
+})
 ```
 
 ### Nesting containers
@@ -157,14 +165,14 @@ inner.get('a') // → 99
 
 ### Accepted value types
 
-| Type                                   | Map/Array/Object value | Object key | Map key | Set element |
-| -------------------------------------- | ---------------------- | ---------- | ------- | ----------- |
-| `string`                               | ✓                      | ✓          | ✓       | ✓           |
-| `number`                               | ✓                      | ✓ (→ string) | ✓     | ✓           |
-| `boolean`                              | ✓                      | ✗          | ✓       | ✓           |
-| `null` / `undefined`                   | ✓                      | ✗          | ✓       | ✓           |
-| `OffHeapObject` / `OffHeapMap` / `OffHeapArray` / `OffHeapSet` | ✓ | ✗ | ✗ | ✗ |
-| Plain JS objects / functions / Symbols | ✗                      | ✗          | ✗       | ✗           |
+| Type                                                           | Map/Array/Object value | Object key   | Map key | Set element |
+| -------------------------------------------------------------- | ---------------------- | ------------ | ------- | ----------- |
+| `string`                                                       | ✓                      | ✓            | ✓       | ✓           |
+| `number`                                                       | ✓                      | ✓ (→ string) | ✓       | ✓           |
+| `boolean`                                                      | ✓                      | ✗            | ✓       | ✓           |
+| `null` / `undefined`                                           | ✓                      | ✗            | ✓       | ✓           |
+| `OffHeapObject` / `OffHeapMap` / `OffHeapArray` / `OffHeapSet` | ✓                      | ✗            | ✗       | ✗           |
+| Plain JS objects / functions / Symbols                         | ✗                      | ✗            | ✗       | ✗           |
 
 ## Benchmark
 

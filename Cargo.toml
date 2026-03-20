@@ -2,22 +2,22 @@
 [package]
 authors = ["LongYinan <lynweklm@gmail.com>"]
 edition = "2021"
-name = "napi_offheap"
+name    = "napi_offheap"
 version = "0.1.0"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = "3.0.0"
-napi-derive = "3.0.0"
-indexmap = "2"
+indexmap      = "2"
+napi          = "3.0.0"
+napi-derive   = "3.0.0"
 ordered-float = "4"
-parking_lot = "0.12"
+parking_lot   = "0.12"
 
 [build-dependencies]
 napi-build = "2"
 
 [profile.release]
-lto = true
+lto   = true
 strip = "symbols"

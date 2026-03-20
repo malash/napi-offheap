@@ -41,22 +41,24 @@ const user = new OffHeapObject<User>()
 
 user.set('name', 'alice').set('age', 30) // 支持链式调用
 user.get('name') // → 'alice'  (类型: string | undefined)
-user.get('age')  // → 30      (类型: number | undefined)
+user.get('age') // → 30      (类型: number | undefined)
 user.has('name') // → true
 user.delete('name') // → true
 
-user.size      // getter → number
-user.keys()    // → string[]
-user.values()  // → User[keyof User][]
+user.size // getter → number
+user.keys() // → string[]
+user.values() // → User[keyof User][]
 user.entries() // → [string, User[keyof User]][]
 
-user.forEach((value, key) => { /* key 是 string */ })
+user.forEach((value, key) => {
+  /* key 是 string */
+})
 
 // Number 键会被强制转换为字符串
-user.set(1, 'one')   // 以键 "1" 存储
-user.get(1)          // → 'one'
-user.get('1')        // → 'one'  (同一个键)
-user.keys()          // → ['1']
+user.set(1, 'one') // 以键 "1" 存储
+user.get(1) // → 'one'
+user.get('1') // → 'one'  (同一个键)
+user.keys() // → ['1']
 ```
 
 > **对比 `OffHeapMap<string, V>`**：`OffHeapObject<T>` 通过 `T[K]` 提供按键的 TypeScript 类型。`OffHeapMap<K, V>` 支持任意基本类型键（包括 `boolean`、`null`、`undefined`），并以原始类型保存和返回键。
@@ -72,17 +74,19 @@ const map = new OffHeapMap<string, number>()
 
 map.set('a', 1).set('b', 2) // 返回 this，支持链式调用
 
-map.get('a')    // → 1  (类型: number | undefined)
-map.has('a')    // → true
+map.get('a') // → 1  (类型: number | undefined)
+map.has('a') // → true
 map.delete('a') // → true（未找到返回 false）
 map.clear()
 
-map.size       // getter → number
-map.keys()     // → string[]
-map.values()   // → number[]
-map.entries()  // → [string, number][]
+map.size // getter → number
+map.keys() // → string[]
+map.values() // → number[]
+map.entries() // → [string, number][]
 
-map.forEach((value: number, key: string) => { /* ... */ })
+map.forEach((value: number, key: string) => {
+  /* ... */
+})
 
 // Number 键同样支持——以 number 存储，不做强制转换
 const byId = new OffHeapMap<number, string>()
@@ -100,15 +104,17 @@ import { OffHeapArray } from 'napi-offheap'
 const arr = new OffHeapArray<number>()
 
 arr.push(1).push(2).push(3) // 支持链式调用
-arr.pop()   // → 3  (类型: number | undefined)
-arr.get(0)  // → 1  (类型: number | undefined)
+arr.pop() // → 3  (类型: number | undefined)
+arr.get(0) // → 1  (类型: number | undefined)
 arr.set(0, 99) // 越界时抛出异常
-arr.length  // getter → number
+arr.length // getter → number
 
 // splice(start, deleteCount, items) → 被删除的元素
 const removed: number[] = arr.splice(1, 1, [10, 20])
 
-arr.forEach((value: number, index: number) => { /* ... */ })
+arr.forEach((value: number, index: number) => {
+  /* ... */
+})
 ```
 
 ### `OffHeapSet<T>`
@@ -123,15 +129,17 @@ import { OffHeapSet } from 'napi-offheap'
 const set = new OffHeapSet<number>()
 
 set.add(1).add(2).add(3) // 支持链式调用
-set.has(1)    // → true
+set.has(1) // → true
 set.delete(1) // → true
 set.clear()
 
-set.size      // getter → number
-set.values()  // → number[]
+set.size // getter → number
+set.values() // → number[]
 
 // 回调接收 (value, value)，符合 JS Set.forEach 规范
-set.forEach((value: number, _value: number) => { /* ... */ })
+set.forEach((value: number, _value: number) => {
+  /* ... */
+})
 ```
 
 ### 嵌套容器
@@ -157,14 +165,14 @@ inner.get('a') // → 99
 
 ### 支持的值类型
 
-| 类型                                   | Map/Array/Object 值 | Object 键 | Map 键 | Set 元素 |
-| -------------------------------------- | ------------------- | --------- | ------ | -------- |
-| `string`                               | ✓                   | ✓         | ✓      | ✓        |
-| `number`                               | ✓                   | ✓ (→ string) | ✓  | ✓        |
-| `boolean`                              | ✓                   | ✗         | ✓      | ✓        |
-| `null` / `undefined`                   | ✓                   | ✗         | ✓      | ✓        |
-| `OffHeapObject` / `OffHeapMap` / `OffHeapArray` / `OffHeapSet` | ✓ | ✗ | ✗ | ✗ |
-| 普通 JS 对象 / 函数 / Symbol           | ✗                   | ✗         | ✗      | ✗        |
+| 类型                                                           | Map/Array/Object 值 | Object 键    | Map 键 | Set 元素 |
+| -------------------------------------------------------------- | ------------------- | ------------ | ------ | -------- |
+| `string`                                                       | ✓                   | ✓            | ✓      | ✓        |
+| `number`                                                       | ✓                   | ✓ (→ string) | ✓      | ✓        |
+| `boolean`                                                      | ✓                   | ✗            | ✓      | ✓        |
+| `null` / `undefined`                                           | ✓                   | ✗            | ✓      | ✓        |
+| `OffHeapObject` / `OffHeapMap` / `OffHeapArray` / `OffHeapSet` | ✓                   | ✗            | ✗      | ✗        |
+| 普通 JS 对象 / 函数 / Symbol                                   | ✗                   | ✗            | ✗      | ✗        |
 
 ## 性能基准
 

@@ -125,10 +125,7 @@ test('OffHeapArray: splice inserts many items preserving order', (t) => {
   arr.push(1).push(6)
   arr.splice(1, 0, [2, 3, 4, 5])
   t.is(arr.length, 6)
-  t.deepEqual(
-    [arr.get(0), arr.get(1), arr.get(2), arr.get(3), arr.get(4), arr.get(5)],
-    [1, 2, 3, 4, 5, 6],
-  )
+  t.deepEqual([arr.get(0), arr.get(1), arr.get(2), arr.get(3), arr.get(4), arr.get(5)], [1, 2, 3, 4, 5, 6])
 })
 
 test('OffHeapArray: splice replaces fewer items with more (array grows)', (t) => {
