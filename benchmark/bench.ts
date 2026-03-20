@@ -10,6 +10,15 @@
  *   - beforeAll: allocate 20M long-lived elements, promote to old generation
  *   - each iteration: allocate 500K temp objects, then call gc() and report the pause time
  *   - afterAll: release the dataset and GC it away before the next task starts
+ *
+ * Result:
+ * CPU: Apple M1 Max , Memory: 64GB
+ * ┌─────────┬──────────────────────────────────────────────────┬─────────────────────┬───────────────────────┬────────────────────────┬────────────────────────┬─────────┐
+ * │ (index) │ Task name                                        │ Latency avg (ns)    │ Latency med (ns)      │ Throughput avg (ops/s) │ Throughput med (ops/s) │ Samples │
+ * ├─────────┼──────────────────────────────────────────────────┼─────────────────────┼───────────────────────┼────────────────────────┼────────────────────────┼─────────┤
+ * │ 0       │ 'JS Array — GC pause with 20M live objects'      │ '155723754 ± 9.50%' │ '152331312 ± 9137396' │ '7 ± 8.21%'            │ '7 ± 0'                │ 10      │
+ * │ 1       │ 'OffHeapArray — GC pause with 20M live elements' │ '1532372 ± 2.62%'   │ '1469459 ± 114208'    │ '671 ± 0.90%'          │ '681 ± 53'             │ 653     │
+ * └─────────┴──────────────────────────────────────────────────┴─────────────────────┴───────────────────────┴────────────────────────┴────────────────────────┴─────────┘
  */
 
 import { Bench } from 'tinybench'
