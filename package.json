@@ -1,6 +1,6 @@
 {
   "name": "napi-offheap",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Template project for writing node package with napi-rs",
   "main": "entry.js",
   "types": "entry.d.ts",
