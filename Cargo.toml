@@ -11,6 +11,8 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = "3.0.0"
 napi-derive = "3.0.0"
+indexmap = "2"
+ordered-float = "4"
 
 [build-dependencies]
 napi-build = "2"

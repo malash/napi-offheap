@@ -56,4 +56,6 @@ const {
   },
 })
 export default __napiModule.exports
-export const plus100 = __napiModule.exports.plus100
+export const PersistentArray = __napiModule.exports.PersistentArray
+export const PersistentMap = __napiModule.exports.PersistentMap
+export const PersistentSet = __napiModule.exports.PersistentSet
