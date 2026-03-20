@@ -102,29 +102,18 @@ pub(crate) fn to_napi_value_inner(
   raw_env: sys::napi_env,
   val: &OffHeapValue,
 ) -> napi::Result<sys::napi_value> {
-  match val {
-    OffHeapValue::Primitive(p) => primitive_to_napi(raw_env, p),
-    OffHeapValue::Map(arc) => {
-      let env = Env::from_raw(raw_env);
-      let instance = OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?;
-      Ok(instance.value)
-    }
-    OffHeapValue::Array(arc) => {
-      let env = Env::from_raw(raw_env);
-      let instance = OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?;
-      Ok(instance.value)
-    }
-    OffHeapValue::Set(arc) => {
-      let env = Env::from_raw(raw_env);
-      let instance = OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?;
-      Ok(instance.value)
-    }
-    OffHeapValue::Object(arc) => {
-      let env = Env::from_raw(raw_env);
-      let instance = OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?;
-      Ok(instance.value)
-    }
+  if let OffHeapValue::Primitive(p) = val {
+    return primitive_to_napi(raw_env, p);
   }
+  let env = Env::from_raw(raw_env);
+  let instance_value = match val {
+    OffHeapValue::Primitive(_) => unreachable!(),
+    OffHeapValue::Map(arc) => OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?.value,
+    OffHeapValue::Array(arc) => OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?.value,
+    OffHeapValue::Set(arc) => OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?.value,
+    OffHeapValue::Object(arc) => OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?.value,
+  };
+  Ok(instance_value)
 }
 
 pub(crate) fn primitive_to_napi(
