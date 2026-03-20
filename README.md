@@ -2,6 +2,9 @@
 
 Off-heap containers for Node.js — store large, long-lived data on the Rust heap so V8's Mark-Compact GC never has to scan it.
 
+> **⚠️ Vibe coded — use with caution.**
+> This project was built entirely through AI-assisted vibe coding and has not been audited for production use. The implementation may contain subtle bugs, unsound unsafe code, or edge cases that were never considered. Review carefully before deploying in any critical context.
+
 ## Why
 
 When the V8 old-generation heap accumulates gigabytes of long-lived objects, a single Mark-Compact GC cycle can pause for hundreds of milliseconds. The root cause is that V8 must walk the entire object graph to find live references.
