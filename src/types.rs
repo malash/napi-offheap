@@ -17,7 +17,12 @@ pub enum PrimitiveValue {
 
 #[derive(Debug, Clone)]
 pub enum OffHeapValue {
-  Primitive(PrimitiveValue),
+  Null,
+  Undefined,
+  Bool(bool),
+  Int(i64),
+  Float(OrderedFloat<f64>),
+  Str(Arc<str>),
   Map(Arc<Mutex<SharedMap>>),
   Array(Arc<Mutex<SharedArray>>),
   Set(Arc<Mutex<SharedSet>>),

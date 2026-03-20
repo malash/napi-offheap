@@ -37,7 +37,7 @@ pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffH
       "plain JS objects are not accepted; wrap with OffHeapMap/Array/Set/Object",
     ));
   }
-  Ok(OffHeapValue::Primitive(js_to_primitive_ty(ty, val)?))
+  js_primitive_ty_to_value(ty, val)
 }
 
 pub(crate) fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
@@ -58,6 +58,29 @@ fn js_to_primitive_ty(ty: ValueType, val: Unknown<'_>) -> napi::Result<Primitive
       }
     }
     ValueType::String => Ok(PrimitiveValue::Str(Arc::from(
+      string_from_unknown(val)?.as_str(),
+    ))),
+    _ => Err(napi::Error::new(
+      napi::Status::InvalidArg,
+      "value must be a primitive or an OffHeap type",
+    )),
+  }
+}
+
+fn js_primitive_ty_to_value(ty: ValueType, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
+  match ty {
+    ValueType::Null => Ok(OffHeapValue::Null),
+    ValueType::Undefined => Ok(OffHeapValue::Undefined),
+    ValueType::Boolean => Ok(OffHeapValue::Bool(bool_from_unknown(val)?)),
+    ValueType::Number => {
+      let n = f64_from_unknown(val)?;
+      if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+        Ok(OffHeapValue::Int(n as i64))
+      } else {
+        Ok(OffHeapValue::Float(OrderedFloat(n)))
+      }
+    }
+    ValueType::String => Ok(OffHeapValue::Str(Arc::from(
       string_from_unknown(val)?.as_str(),
     ))),
     _ => Err(napi::Error::new(
@@ -103,50 +126,36 @@ fn string_from_unknown(val: Unknown<'_>) -> napi::Result<String> {
   unsafe { String::from_napi_value(v.env, v.value) }
 }
 
-// All helpers below accept raw `sys::napi_env` instead of `&Env` so that the
-// returned values are not tied to a local borrow — `#[napi]` methods receive
-// `Env` by value, so borrowing it would prevent returning the value.
-
 pub(crate) fn to_napi_value_inner(
   raw_env: sys::napi_env,
   val: &OffHeapValue,
 ) -> napi::Result<sys::napi_value> {
-  if let OffHeapValue::Primitive(p) = val {
-    return primitive_to_napi(raw_env, p);
+  unsafe {
+    match val {
+      OffHeapValue::Null => Null::to_napi_value(raw_env, Null),
+      OffHeapValue::Undefined => <()>::to_napi_value(raw_env, ()),
+      OffHeapValue::Bool(b) => bool::to_napi_value(raw_env, *b),
+      OffHeapValue::Int(i) => i64::to_napi_value(raw_env, *i),
+      OffHeapValue::Float(f) => f64::to_napi_value(raw_env, f.0),
+      OffHeapValue::Str(s) => <&str>::to_napi_value(raw_env, s.as_ref()),
+      OffHeapValue::Map(arc) => {
+        let env = Env::from_raw(raw_env);
+        Ok(OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+      }
+      OffHeapValue::Array(arc) => {
+        let env = Env::from_raw(raw_env);
+        Ok(OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+      }
+      OffHeapValue::Set(arc) => {
+        let env = Env::from_raw(raw_env);
+        Ok(OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+      }
+      OffHeapValue::Object(arc) => {
+        let env = Env::from_raw(raw_env);
+        Ok(OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+      }
+    }
   }
-  let env = Env::from_raw(raw_env);
-  let instance_value = match val {
-    OffHeapValue::Primitive(_) => unreachable!(),
-    OffHeapValue::Map(arc) => {
-      OffHeapMap {
-        inner: Arc::clone(arc),
-      }
-      .into_instance(&env)?
-      .value
-    }
-    OffHeapValue::Array(arc) => {
-      OffHeapArray {
-        inner: Arc::clone(arc),
-      }
-      .into_instance(&env)?
-      .value
-    }
-    OffHeapValue::Set(arc) => {
-      OffHeapSet {
-        inner: Arc::clone(arc),
-      }
-      .into_instance(&env)?
-      .value
-    }
-    OffHeapValue::Object(arc) => {
-      OffHeapObject {
-        inner: Arc::clone(arc),
-      }
-      .into_instance(&env)?
-      .value
-    }
-  };
-  Ok(instance_value)
 }
 
 pub(crate) fn primitive_to_napi(
@@ -165,9 +174,6 @@ pub(crate) fn primitive_to_napi(
   }
 }
 
-// `raw_env` and `raw_val` must be a valid napi env and a value belonging to it.
-// All callers in this module obtain them from successful napi API calls, so the
-// precondition is always upheld and the function is exposed as safe.
 #[inline]
 pub(crate) fn to_unknown(raw_env: sys::napi_env, raw_val: sys::napi_value) -> Unknown<'static> {
   unsafe { Unknown::from_raw_unchecked(raw_env, raw_val) }

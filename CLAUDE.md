@@ -70,19 +70,24 @@ pub enum PrimitiveValue {
 ```rust
 #[derive(Debug, Clone)]
 pub enum OffHeapValue {
-  Primitive(PrimitiveValue),
+  Null,
+  Undefined,
+  Bool(bool),
+  Int(i64),
+  Float(OrderedFloat<f64>),
+  Str(Arc<str>),
   Map(Arc<Mutex<SharedMap>>),
   Array(Arc<Mutex<SharedArray>>),
   Set(Arc<Mutex<SharedSet>>),
   Object(Arc<Mutex<SharedObject>>),
 }
 
-pub type SharedMap    = IndexMap<PrimitiveValue, OffHeapValue>;
-pub type SharedArray  = Vec<OffHeapValue>;
-// Set elements are limited to PrimitiveValue: object identity has no stable hash.
-pub type SharedSet    = IndexSet<PrimitiveValue>;
+pub type SharedMap = IndexMap<PrimitiveValue, OffHeapValue>;
 // String keys only — number keys are coerced to strings on write, matching JS object semantics.
 pub type SharedObject = IndexMap<String, OffHeapValue>;
+pub type SharedArray = Vec<OffHeapValue>;
+// Set elements are limited to PrimitiveValue: object identity has no stable hash.
+pub type SharedSet = IndexSet<PrimitiveValue>;
 ```
 
 **为什么 Set 只允许 PrimitiveValue**：Rust `HashSet` 要求 `Hash + Eq`，JS 对象没有稳定 hash，强行支持会引入语义不一致。
@@ -325,12 +330,12 @@ pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffH
       "plain JS objects are not accepted; wrap with OffHeapMap/Array/Set/Object",
     ));
   }
-  Ok(OffHeapValue::Primitive(js_to_primitive_ty(ty, val)?))
+  js_primitive_ty_to_value(ty, val)
 }
 ```
 
 - 先缓存类型，再逐一 instanceof 检查，最后拒绝普通对象。
-- 非 Object 类型走 `js_to_primitive_ty`（内部函数，避免重复调用 `get_type()`）。
+- 非 Object 类型走 `js_primitive_ty_to_value`（内部函数，避免重复调用 `get_type()`）。
 
 ### 5.2 js_to_primitive — JS 原始值 → PrimitiveValue
 
@@ -382,7 +387,36 @@ fn string_from_unknown(val: Unknown<'_>) -> napi::Result<String> {
 }
 ```
 
-### 5.3 js_to_object_key — JS string/number → String（OffHeapObject 专用）
+### 5.3 js_primitive_ty_to_value — JS primitive type → OffHeapValue（内部）
+
+对应 `js_to_primitive_ty`，但直接生成平铺的 `OffHeapValue` 变体，避免经过 `PrimitiveValue` 包装：
+
+```rust
+fn js_primitive_ty_to_value(ty: ValueType, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
+  match ty {
+    ValueType::Null      => Ok(OffHeapValue::Null),
+    ValueType::Undefined => Ok(OffHeapValue::Undefined),
+    ValueType::Boolean   => Ok(OffHeapValue::Bool(bool_from_unknown(val)?)),
+    ValueType::Number    => {
+      let n = f64_from_unknown(val)?;
+      if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+        Ok(OffHeapValue::Int(n as i64))
+      } else {
+        Ok(OffHeapValue::Float(OrderedFloat(n)))
+      }
+    }
+    ValueType::String => Ok(OffHeapValue::Str(Arc::from(
+      string_from_unknown(val)?.as_str(),
+    ))),
+    _ => Err(napi::Error::new(
+      napi::Status::InvalidArg,
+      "value must be a primitive or an OffHeap type",
+    )),
+  }
+}
+```
+
+### 5.5 js_to_object_key — JS string/number → String（OffHeapObject 专用）
 
 ```rust
 pub(crate) fn js_to_object_key(val: Unknown<'_>) -> napi::Result<String> {
@@ -406,39 +440,47 @@ pub(crate) fn js_to_object_key(val: Unknown<'_>) -> napi::Result<String> {
 
 匹配 JS 对象语义：number key 自动 coerce 为 string（`1` → `"1"`，`1.5` → `"1.5"`），其余类型报错。
 
-### 5.4 to_napi_value_inner — OffHeapValue → sys::napi_value
+### 5.6 to_napi_value_inner — OffHeapValue → sys::napi_value
+
+平铺的 `OffHeapValue` 在单个 `unsafe {}` 块内匹配所有 10 个变体：
 
 ```rust
 pub(crate) fn to_napi_value_inner(
   raw_env: sys::napi_env,
   val: &OffHeapValue,
 ) -> napi::Result<sys::napi_value> {
-  if let OffHeapValue::Primitive(p) = val {
-    return primitive_to_napi(raw_env, p);
+  unsafe {
+    match val {
+      OffHeapValue::Null      => Null::to_napi_value(raw_env, Null),
+      OffHeapValue::Undefined => <()>::to_napi_value(raw_env, ()),
+      OffHeapValue::Bool(b)   => bool::to_napi_value(raw_env, *b),
+      OffHeapValue::Int(i)    => i64::to_napi_value(raw_env, *i),
+      OffHeapValue::Float(f)  => f64::to_napi_value(raw_env, f.0),
+      OffHeapValue::Str(s)    => <&str>::to_napi_value(raw_env, s.as_ref()),
+      OffHeapValue::Map(arc) => {
+        let env = Env::from_raw(raw_env);
+        Ok(OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+      }
+      OffHeapValue::Array(arc) => {
+        let env = Env::from_raw(raw_env);
+        Ok(OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+      }
+      OffHeapValue::Set(arc) => {
+        let env = Env::from_raw(raw_env);
+        Ok(OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+      }
+      OffHeapValue::Object(arc) => {
+        let env = Env::from_raw(raw_env);
+        Ok(OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+      }
+    }
   }
-  let env = Env::from_raw(raw_env);
-  let instance_value = match val {
-    OffHeapValue::Primitive(_) => unreachable!(),
-    OffHeapValue::Map(arc) => {
-      OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?.value
-    }
-    OffHeapValue::Array(arc) => {
-      OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?.value
-    }
-    OffHeapValue::Set(arc) => {
-      OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?.value
-    }
-    OffHeapValue::Object(arc) => {
-      OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?.value
-    }
-  };
-  Ok(instance_value)
 }
 ```
 
 容器类型：`Arc::clone` 后用 `.into_instance(&env)?` 创建新 JS 壳，共享同一份 Rust 数据。
 
-### 5.5 primitive_to_napi — PrimitiveValue → sys::napi_value
+### 5.7 primitive_to_napi — PrimitiveValue → sys::napi_value
 
 ```rust
 pub(crate) fn primitive_to_napi(
@@ -460,7 +502,7 @@ pub(crate) fn primitive_to_napi(
 
 注意 `Str` 使用 `<&str>::to_napi_value`（不是 `String::to_napi_value`），避免额外的字符串分配。
 
-### 5.6 to_unknown — 裸指针 → Unknown<'static>
+### 5.8 to_unknown — 裸指针 → Unknown<'static>
 
 普通函数（不是 `unsafe fn`），unsafe 封装在内部：
 
@@ -471,7 +513,7 @@ pub(crate) fn to_unknown(raw_env: sys::napi_env, raw_val: sys::napi_value) -> Un
 }
 ```
 
-### 5.7 val_to_unknown / prim_to_unknown / undefined_to_unknown / str_to_unknown / array_to_unknown — 组合辅助
+### 5.9 val_to_unknown / prim_to_unknown / undefined_to_unknown / str_to_unknown / array_to_unknown — 组合辅助
 
 ```rust
 pub(crate) fn val_to_unknown(
@@ -995,6 +1037,7 @@ src/types.rs      — 所有类型定义
 
 src/convert.rs    — JS ↔ Rust 转换辅助函数（均为 pub(crate)）
                     js_to_persistent / js_to_primitive / js_to_primitive_ty（内部）
+                    js_primitive_ty_to_value（内部）
                     bool_from_unknown / f64_from_unknown / string_from_unknown（内部）
                     js_to_object_key
                     to_napi_value_inner / primitive_to_napi
