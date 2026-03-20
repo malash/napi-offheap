@@ -108,8 +108,10 @@ impl OffHeapArray {
       let val = self.inner.lock().get(index).cloned();
       if let Some(val) = val {
         let js_val = val_to_unknown(raw_env, &val)?;
-        let js_idx =
-          unsafe { to_unknown(raw_env, u32::to_napi_value(raw_env, index as u32)?) };
+        let js_idx = unsafe {
+          let idx_u32 = u32::try_from(index).unwrap_or(u32::MAX);
+          to_unknown(raw_env, u32::to_napi_value(raw_env, idx_u32)?)
+        };
         callback.call(FnArgs { data: (js_val, js_idx) })?;
       }
     }

@@ -85,7 +85,7 @@ impl OffHeapObject {
     entries
       .iter()
       .map(|(k, v)| {
-        let raw_key = unsafe { String::to_napi_value(raw_env, k.clone())? };
+        let raw_key = unsafe { <&str>::to_napi_value(raw_env, k.as_str())? };
         let js_key = unsafe { to_unknown(raw_env, raw_key) };
         let js_val = val_to_unknown(raw_env, v)?;
         let env_obj = Env::from_raw(raw_env);
@@ -113,7 +113,7 @@ impl OffHeapObject {
         None => break,
         Some((key, val)) => {
           let js_val = val_to_unknown(raw_env, &val)?;
-          let js_key = unsafe { to_unknown(raw_env, String::to_napi_value(raw_env, key.clone())?) };
+          let js_key = unsafe { to_unknown(raw_env, <&str>::to_napi_value(raw_env, &key)?) };
           callback.call(FnArgs { data: (js_val, js_key) })?;
           next_index = self
             .inner

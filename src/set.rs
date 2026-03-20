@@ -75,9 +75,8 @@ impl OffHeapSet {
       match entry {
         None => break,
         Some(primitive) => {
-          let js_val1 = prim_to_unknown(raw_env, &primitive)?;
-          let js_val2 = prim_to_unknown(raw_env, &primitive)?;
-          callback.call(FnArgs { data: (js_val1, js_val2) })?;
+          let js_val = prim_to_unknown(raw_env, &primitive)?;
+          callback.call(FnArgs { data: (js_val, js_val) })?;
           next_index = self
             .inner
             .lock()

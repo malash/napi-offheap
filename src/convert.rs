@@ -6,7 +6,8 @@ use std::sync::Arc;
 use crate::types::{OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet, OffHeapValue, PrimitiveValue};
 
 pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
-  if val.get_type()? == ValueType::Object {
+  let ty = val.get_type()?;
+  if ty == ValueType::Object {
     let raw_env = env.raw();
     let raw_val = val.value().value;
 
@@ -36,12 +37,16 @@ pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffH
       "plain JS objects are not accepted; wrap with OffHeapMap/Array/Set/Object",
     ));
   }
-  Ok(OffHeapValue::Primitive(js_to_primitive(val)?))
+  Ok(OffHeapValue::Primitive(js_to_primitive_ty(ty, val)?))
 }
 
 pub(crate) fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
+  js_to_primitive_ty(val.get_type()?, val)
+}
+
+fn js_to_primitive_ty(ty: ValueType, val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
   let v = val.value();
-  match val.get_type()? {
+  match ty {
     ValueType::Null => Ok(PrimitiveValue::Null),
     ValueType::Undefined => Ok(PrimitiveValue::Undefined),
     ValueType::Boolean => {
