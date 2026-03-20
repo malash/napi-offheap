@@ -87,10 +87,7 @@ impl OffHeapArray {
     let start = (start as usize).min(len);
     let end = (start + delete_count as usize).min(len);
 
-    let removed: Vec<OffHeapValue> = guard.drain(start..end).collect();
-    for (offset, item) in new_items.into_iter().enumerate() {
-      guard.insert(start + offset, item);
-    }
+    let removed: Vec<OffHeapValue> = guard.splice(start..end, new_items).collect();
     drop(guard);
 
     removed.iter().map(|v| val_to_unknown(raw_env, v)).collect()

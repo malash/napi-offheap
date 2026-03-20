@@ -117,6 +117,55 @@ test('OffHeapArray: splice removes all elements', (t) => {
   t.is(arr.length, 0)
 })
 
+test('OffHeapArray: splice inserts many items preserving order', (t) => {
+  // Validates that all inserted items land in the correct order when
+  // more than one item is spliced in (the previous O(n×m) loop could
+  // misplace items if Vec::insert shifted elements incorrectly).
+  const arr = new OffHeapArray<number>()
+  arr.push(1).push(6)
+  arr.splice(1, 0, [2, 3, 4, 5])
+  t.is(arr.length, 6)
+  t.deepEqual(
+    [arr.get(0), arr.get(1), arr.get(2), arr.get(3), arr.get(4), arr.get(5)],
+    [1, 2, 3, 4, 5, 6],
+  )
+})
+
+test('OffHeapArray: splice replaces fewer items with more (array grows)', (t) => {
+  const arr = new OffHeapArray<number>()
+  arr.push(1).push(2).push(10)
+  const removed = arr.splice(1, 1, [3, 4, 5, 6, 7, 8, 9])
+  t.deepEqual(removed, [2])
+  t.is(arr.length, 9)
+  t.deepEqual(
+    Array.from({ length: 9 }, (_, i) => arr.get(i)),
+    [1, 3, 4, 5, 6, 7, 8, 9, 10],
+  )
+})
+
+test('OffHeapArray: splice replaces more items with fewer (array shrinks)', (t) => {
+  const arr = new OffHeapArray<number>()
+  arr.push(1).push(2).push(3).push(4).push(5).push(6)
+  const removed = arr.splice(1, 4, [99])
+  t.deepEqual(removed, [2, 3, 4, 5])
+  t.is(arr.length, 3)
+  t.is(arr.get(0), 1)
+  t.is(arr.get(1), 99)
+  t.is(arr.get(2), 6)
+})
+
+test('OffHeapArray: splice tail is intact after multi-item insert', (t) => {
+  // Ensures elements after the insertion point are not corrupted.
+  // splice(1, 0, [10,20,30]) on [0,100,200] → [0,10,20,30,100,200]
+  // The original tail (100, 200) shifts right by 3 (number of inserted items).
+  const arr = new OffHeapArray<number>()
+  arr.push(0).push(100).push(200)
+  arr.splice(1, 0, [10, 20, 30])
+  t.is(arr.length, 6)
+  t.is(arr.get(4), 100)
+  t.is(arr.get(5), 200)
+})
+
 test('OffHeapArray: forEach iterates with correct indices', (t) => {
   const arr = new OffHeapArray<string>()
   arr.push('a').push('b').push('c')
