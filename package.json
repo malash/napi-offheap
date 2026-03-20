@@ -62,7 +62,7 @@
     "prepublishOnly": "napi prepublish -t npm",
     "typecheck": "tsc --noEmit",
     "test": "yarn typecheck && ava",
-    "preversion": "napi build --platform && git add .",
+    "preversion": "napi build --platform --dts _generated.d.ts && git add .",
     "version": "napi version",
     "prepare": "husky"
   },
