@@ -1,87 +1,144 @@
-# `@napi-rs/package-template`
+# napi-offheap
 
-![https://github.com/napi-rs/package-template/actions](https://github.com/napi-rs/package-template/workflows/CI/badge.svg)
+Off-heap containers for Node.js — store large, long-lived data on the Rust heap so V8's Mark-Compact GC never has to scan it.
 
-> Template project for writing node packages with napi-rs.
+## Why
 
-# Usage
+When the V8 old-generation heap accumulates gigabytes of long-lived objects, a single Mark-Compact GC cycle can pause for hundreds of milliseconds. The root cause is that V8 must walk the entire object graph to find live references.
 
-1. Click **Use this template**.
-2. **Clone** your project.
-3. Run `yarn install` to install dependencies.
-4. Run `yarn napi rename -n [@your-scope/package-name] -b [binary-name]` command under the project folder to rename your package.
+`napi-offheap` moves your data to the Rust heap. V8 only sees a thin wrapper object per container (one `Arc` pointer worth of memory). The actual data is completely invisible to the GC, so scan time drops to near zero regardless of how much data you store.
 
-## Install this test package
+Shared references work transparently: when you `get` a nested container, the returned object shares the same underlying Rust allocation — mutations are immediately visible through all references, no copy involved.
 
-```bash
-yarn add @napi-rs/package-template
-```
-
-## Ability
-
-### Build
-
-After `yarn build/npm run build` command, you can see `package-template.[darwin|win32|linux].node` file in project root. This is the native addon built from [lib.rs](./src/lib.rs).
-
-### Test
-
-With [ava](https://github.com/avajs/ava), run `yarn test/npm run test` to testing native addon. You can also switch to another testing framework if you want.
-
-### CI
-
-With GitHub Actions, each commit and pull request will be built and tested automatically in [`node@20`, `@node22`] x [`macOS`, `Linux`, `Windows`] matrix. You will never be afraid of the native addon broken in these platforms.
-
-### Release
-
-Release native package is very difficult in old days. Native packages may ask developers who use it to install `build toolchain` like `gcc/llvm`, `node-gyp` or something more.
-
-With `GitHub actions`, we can easily prebuild a `binary` for major platforms. And with `N-API`, we should never be afraid of **ABI Compatible**.
-
-The other problem is how to deliver prebuild `binary` to users. Downloading it in `postinstall` script is a common way that most packages do it right now. The problem with this solution is it introduced many other packages to download binary that has not been used by `runtime codes`. The other problem is some users may not easily download the binary from `GitHub/CDN` if they are behind a private network (But in most cases, they have a private NPM mirror).
-
-In this package, we choose a better way to solve this problem. We release different `npm packages` for different platforms. And add it to `optionalDependencies` before releasing the `Major` package to npm.
-
-`NPM` will choose which native package should download from `registry` automatically. You can see [npm](./npm) dir for details. And you can also run `yarn add @napi-rs/package-template` to see how it works.
-
-## Develop requirements
-
-- Install the latest `Rust`
-- Install `Node.js@10+` which fully supported `Node-API`
-- Install `yarn@1.x`
-
-## Test in local
-
-- yarn
-- yarn build
-- yarn test
-
-And you will see:
+## Install
 
 ```bash
-$ ava --verbose
-
-  ✔ sync function from native code
-  ✔ sleep function from native code (201ms)
-  ─
-
-  2 tests passed
-✨  Done in 1.12s.
+npm install napi-offheap
 ```
 
-## Release package
+## API
 
-Ensure you have set your **NPM_TOKEN** in the `GitHub` project setting.
+### `OffHeapMap`
 
-In `Settings -> Secrets`, add **NPM_TOKEN** into it.
+Ordered key-value map (preserves insertion order, like JS `Map`).
 
-When you want to release the package:
+```ts
+const map = new OffHeapMap()
+
+map.set('key', 'value') // returns this — chainable
+map.set('n', 42).set('ok', true)
+
+map.get('key') // → 'value'
+map.has('key') // → true
+map.delete('key') // → true (false if not found)
+map.clear()
+
+map.size // getter → number
+map.keys() // → string[]
+map.values() // → unknown[]
+map.entries() // → [string, unknown][]
+
+map.forEach((value, key) => {
+  /* ... */
+})
+```
+
+### `OffHeapArray`
+
+Ordered list with O(1) push/pop and O(n) splice.
+
+```ts
+const arr = new OffHeapArray()
+
+arr.push(1).push(2).push(3) // chainable
+arr.pop() // → 3
+arr.get(0) // → 1
+arr.set(0, 99) // throws if index out of bounds
+arr.length // getter → number
+
+// splice(start, deleteCount, ...items) → removed elements
+arr.splice(1, 1, 'a', 'b')
+
+arr.forEach((value, index) => {
+  /* ... */
+})
+```
+
+### `OffHeapSet`
+
+Ordered set of primitive values (preserves insertion order, like JS `Set`).
+
+Only accepts primitives: `null`, `undefined`, `boolean`, `number`, `string`, or `OffHeapPrimitive`.
+
+```ts
+const set = new OffHeapSet()
+
+set.add(1).add('hello').add(true) // chainable
+set.has(1) // → true
+set.delete(1) // → true
+set.clear()
+
+set.size // getter → number
+set.values() // → unknown[]
+
+set.forEach((value, value) => {
+  /* with JS Set.forEach semantics */
+})
+```
+
+### `OffHeapPrimitive`
+
+Wraps a single primitive value on the Rust heap. Accepted anywhere a primitive is expected.
+
+```ts
+const p = new OffHeapPrimitive(42)
+p.value // → 42
+
+// Transparent when passed to other containers:
+map.set('x', new OffHeapPrimitive(42)) // stored as 42
+map.get('x') // → 42 (not OffHeapPrimitive)
+
+set.add(new OffHeapPrimitive('hello')) // equivalent to set.add('hello')
+```
+
+## Nesting containers
+
+Containers can be nested freely. A nested container shares its underlying data — mutations propagate instantly:
+
+```ts
+const inner = new OffHeapMap()
+inner.set('a', 1)
+
+const outer = new OffHeapMap()
+outer.set('inner', inner)
+
+const ref = outer.get('inner') // same Arc as `inner`
+ref.set('a', 99)
+
+inner.get('a') // → 99
+```
+
+> **Warning:** circular references (`a.set('b', b); b.set('a', a)`) cause memory leaks — `Arc` cannot break reference cycles.
+
+## Accepted value types
+
+| Type                                   | Map/Array     | Set           |
+| -------------------------------------- | ------------- | ------------- |
+| `null` / `undefined`                   | ✓             | ✓             |
+| `boolean`                              | ✓             | ✓             |
+| `number`                               | ✓             | ✓             |
+| `string`                               | ✓             | ✓             |
+| `OffHeapPrimitive`                     | ✓ (unwrapped) | ✓ (unwrapped) |
+| `OffHeapMap`                           | ✓             | ✗             |
+| `OffHeapArray`                         | ✓             | ✗             |
+| `OffHeapSet`                           | ✓             | ✗             |
+| Plain JS objects / functions / Symbols | ✗             | ✗             |
+
+## Build from source
 
 ```bash
-npm version [<newversion> | major | minor | patch | premajor | preminor | prepatch | prerelease [--preid=<prerelease-id>] | from-git]
-
-git push
+# Prerequisites: Rust toolchain, Node.js >= 10.17
+yarn install
+yarn build
+yarn test
 ```
-
-GitHub actions will do the rest job for you.
-
-> WARN: Don't run `npm publish` manually.

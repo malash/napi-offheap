@@ -108,6 +108,7 @@ const { instance: __napiInstance, module: __wasiModule, napiModule: __napiModule
   },
 })
 module.exports = __napiModule.exports
-module.exports.PersistentArray = __napiModule.exports.PersistentArray
-module.exports.PersistentMap = __napiModule.exports.PersistentMap
-module.exports.PersistentSet = __napiModule.exports.PersistentSet
+module.exports.OffHeapArray = __napiModule.exports.OffHeapArray
+module.exports.OffHeapMap = __napiModule.exports.OffHeapMap
+module.exports.OffHeapPrimitive = __napiModule.exports.OffHeapPrimitive
+module.exports.OffHeapSet = __napiModule.exports.OffHeapSet

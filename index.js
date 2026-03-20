@@ -557,6 +557,7 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
-module.exports.PersistentArray = nativeBinding.PersistentArray
-module.exports.PersistentMap = nativeBinding.PersistentMap
-module.exports.PersistentSet = nativeBinding.PersistentSet
+module.exports.OffHeapArray = nativeBinding.OffHeapArray
+module.exports.OffHeapMap = nativeBinding.OffHeapMap
+module.exports.OffHeapPrimitive = nativeBinding.OffHeapPrimitive
+module.exports.OffHeapSet = nativeBinding.OffHeapSet

@@ -1,4 +1,4 @@
-# Persistent 堆外容器 — 完整实现规范
+# OffHeap 堆外容器 — 完整实现规范
 
 本文档面向 AI 代码生成。按此文档可完整还原 `src/lib.rs` 的每一行代码，无需参考任何其他资料。
 
@@ -64,19 +64,19 @@ pub enum PrimitiveValue {
 - JS `number` 统一先读成 `f64`，若 `fract() == 0.0` 且在 `i64` 范围内则存为 `Int`，否则存为 `Float`。
 - 变体名为 `Str`（不是 `String`，避免与 Rust 内置类型重名）。
 
-### 3.2 PersistentValue
+### 3.2 OffHeapValue
 
 ```rust
 #[derive(Debug, Clone)]
-pub enum PersistentValue {
+pub enum OffHeapValue {
   Primitive(PrimitiveValue),
   Map(Arc<Mutex<SharedMap>>),
   Array(Arc<Mutex<SharedArray>>),
   Set(Arc<Mutex<SharedSet>>),
 }
 
-pub type SharedMap   = IndexMap<String, PersistentValue>;  // 保证插入顺序
-pub type SharedArray = Vec<PersistentValue>;
+pub type SharedMap   = IndexMap<String, OffHeapValue>;  // 保证插入顺序
+pub type SharedArray = Vec<OffHeapValue>;
 pub type SharedSet   = IndexSet<PrimitiveValue>;           // 保证插入顺序，元素限基本类型
 ```
 
@@ -91,22 +91,27 @@ pub type SharedSet   = IndexSet<PrimitiveValue>;           // 保证插入顺序
 
 ```rust
 #[napi]
-pub struct PersistentMap {
-  inner: Arc<Mutex<SharedMap>>,
+pub struct OffHeapPrimitive {
+  pub(crate) inner: PrimitiveValue,  // 不需要 Arc<Mutex>，PrimitiveValue 不可变
 }
 
 #[napi]
-pub struct PersistentArray {
-  inner: Arc<Mutex<SharedArray>>,
+pub struct OffHeapMap {
+  pub(crate) inner: Arc<Mutex<SharedMap>>,
 }
 
 #[napi]
-pub struct PersistentSet {
-  inner: Arc<Mutex<SharedSet>>,
+pub struct OffHeapArray {
+  pub(crate) inner: Arc<Mutex<SharedArray>>,
+}
+
+#[napi]
+pub struct OffHeapSet {
+  pub(crate) inner: Arc<Mutex<SharedSet>>,
 }
 ```
 
-字段 `inner` 不加 `pub`，JS 端无法直接访问原始数据。
+字段均为 `pub(crate)`：crate 内跨模块可访问，JS 端无法直接访问。
 
 ---
 
@@ -190,7 +195,7 @@ let env = Env::from_raw(raw_env);
 使用 `JavaScriptClassExt::into_instance`（已被 `bindgen_prelude::*` 导出）：
 
 ```rust
-let instance = PersistentMap { inner: Arc::clone(arc) }.into_instance(&env)?;
+let instance = OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?;
 // instance.value 是 sys::napi_value
 ```
 
@@ -199,9 +204,9 @@ let instance = PersistentMap { inner: Arc::clone(arc) }.into_instance(&env)?;
 ### 4.7 napi class instanceof 检测
 
 ```rust
-PersistentMap::instance_of(env, &val)?    // -> napi::Result<bool>
-PersistentArray::instance_of(env, &val)?
-PersistentSet::instance_of(env, &val)?
+OffHeapMap::instance_of(env, &val)?    // -> napi::Result<bool>
+OffHeapArray::instance_of(env, &val)?
+OffHeapSet::instance_of(env, &val)?
 ```
 
 参数：`env: &Env`，`val: &Unknown<'_>`。
@@ -211,9 +216,9 @@ PersistentSet::instance_of(env, &val)?
 ```rust
 let raw_val = val.value().value;  // sys::napi_value
 let instance = unsafe {
-  ClassInstance::<'_, PersistentMap>::from_napi_value(raw_env, raw_val)?
+  ClassInstance::<'_, OffHeapMap>::from_napi_value(raw_env, raw_val)?
 };
-// instance 解引用可访问 PersistentMap 的字段
+// instance 解引用可访问 OffHeapMap 的字段
 Arc::clone(&instance.inner)
 ```
 
@@ -286,36 +291,36 @@ fn lock_err(e: impl std::fmt::Display) -> napi::Error {
 
 所有 `self.inner.lock()` 均用 `.map_err(lock_err)?` 处理。
 
-### 5.2 js_to_persistent — JS 值 → PersistentValue
+### 5.2 js_to_persistent — JS 值 → OffHeapValue
 
 ```rust
-fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<PersistentValue> {
+fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
   if val.get_type()? == ValueType::Object {
     let raw_env = env.raw();
     let raw_val = val.value().value;
 
-    if PersistentMap::instance_of(env, &val)? {
+    if OffHeapMap::instance_of(env, &val)? {
       let instance =
-        unsafe { ClassInstance::<'_, PersistentMap>::from_napi_value(raw_env, raw_val)? };
-      return Ok(PersistentValue::Map(Arc::clone(&instance.inner)));
+        unsafe { ClassInstance::<'_, OffHeapMap>::from_napi_value(raw_env, raw_val)? };
+      return Ok(OffHeapValue::Map(Arc::clone(&instance.inner)));
     }
-    if PersistentArray::instance_of(env, &val)? {
+    if OffHeapArray::instance_of(env, &val)? {
       let instance =
-        unsafe { ClassInstance::<'_, PersistentArray>::from_napi_value(raw_env, raw_val)? };
-      return Ok(PersistentValue::Array(Arc::clone(&instance.inner)));
+        unsafe { ClassInstance::<'_, OffHeapArray>::from_napi_value(raw_env, raw_val)? };
+      return Ok(OffHeapValue::Array(Arc::clone(&instance.inner)));
     }
-    if PersistentSet::instance_of(env, &val)? {
+    if OffHeapSet::instance_of(env, &val)? {
       let instance =
-        unsafe { ClassInstance::<'_, PersistentSet>::from_napi_value(raw_env, raw_val)? };
-      return Ok(PersistentValue::Set(Arc::clone(&instance.inner)));
+        unsafe { ClassInstance::<'_, OffHeapSet>::from_napi_value(raw_env, raw_val)? };
+      return Ok(OffHeapValue::Set(Arc::clone(&instance.inner)));
     }
 
     return Err(napi::Error::new(
       napi::Status::InvalidArg,
-      "plain JS objects are not accepted; wrap with PersistentMap/Array/Set",
+      "plain JS objects are not accepted; wrap with OffHeapMap/Array/Set",
     ));
   }
-  Ok(PersistentValue::Primitive(js_to_primitive(val)?))
+  Ok(OffHeapValue::Primitive(js_to_primitive(val)?))
 }
 ```
 
@@ -325,7 +330,21 @@ fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<PersistentValue
 ### 5.3 js_to_primitive — JS 原始值 → PrimitiveValue
 
 ```rust
-fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
+fn js_to_primitive(env: &Env, val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
+  // OffHeapPrimitive 实例视为透明包装，直接解包
+  if val.get_type()? == ValueType::Object {
+    let raw_env = env.raw();
+    let raw_val = val.value().value;
+    if OffHeapPrimitive::instance_of(env, &val)? {
+      let instance =
+        unsafe { ClassInstance::<'_, OffHeapPrimitive>::from_napi_value(raw_env, raw_val)? };
+      return Ok(instance.inner.clone());
+    }
+    return Err(napi::Error::new(
+      napi::Status::InvalidArg,
+      "value must be a primitive or an OffHeap type",
+    ));
+  }
   let v = val.value();
   match val.get_type()? {
     ValueType::Null      => Ok(PrimitiveValue::Null),
@@ -348,36 +367,36 @@ fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
     }
     _ => Err(napi::Error::new(
       napi::Status::InvalidArg,
-      "value must be a primitive or a Persistent type",
+      "value must be a primitive or an OffHeap type",
     )),
   }
 }
 ```
 
-注意：此函数**不接受 `env: &Env` 参数**，直接从 `val.value()` 取得裸指针。
+`OffHeapPrimitive` 实例在此处被透明解包，因此 `OffHeapSet.add(new OffHeapPrimitive(42))` 与 `OffHeapSet.add(42)` 完全等价。
 
-### 5.4 to_napi_value_inner — PersistentValue → sys::napi_value
+### 5.4 to_napi_value_inner — OffHeapValue → sys::napi_value
 
 ```rust
 fn to_napi_value_inner(
   raw_env: sys::napi_env,
-  val: &PersistentValue,
+  val: &OffHeapValue,
 ) -> napi::Result<sys::napi_value> {
   match val {
-    PersistentValue::Primitive(p) => primitive_to_napi(raw_env, p),
-    PersistentValue::Map(arc) => {
+    OffHeapValue::Primitive(p) => primitive_to_napi(raw_env, p),
+    OffHeapValue::Map(arc) => {
       let env = Env::from_raw(raw_env);
-      let instance = PersistentMap { inner: Arc::clone(arc) }.into_instance(&env)?;
+      let instance = OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?;
       Ok(instance.value)
     }
-    PersistentValue::Array(arc) => {
+    OffHeapValue::Array(arc) => {
       let env = Env::from_raw(raw_env);
-      let instance = PersistentArray { inner: Arc::clone(arc) }.into_instance(&env)?;
+      let instance = OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?;
       Ok(instance.value)
     }
-    PersistentValue::Set(arc) => {
+    OffHeapValue::Set(arc) => {
       let env = Env::from_raw(raw_env);
-      let instance = PersistentSet { inner: Arc::clone(arc) }.into_instance(&env)?;
+      let instance = OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?;
       Ok(instance.value)
     }
   }
@@ -419,7 +438,7 @@ unsafe fn to_unknown(raw_env: sys::napi_env, raw_val: sys::napi_value) -> Unknow
 ### 5.7 val_to_unknown / prim_to_unknown — 组合辅助
 
 ```rust
-fn val_to_unknown(raw_env: sys::napi_env, val: &PersistentValue) -> napi::Result<Unknown<'static>> {
+fn val_to_unknown(raw_env: sys::napi_env, val: &OffHeapValue) -> napi::Result<Unknown<'static>> {
   let raw = to_napi_value_inner(raw_env, val)?;
   Ok(unsafe { to_unknown(raw_env, raw) })
 }
@@ -432,11 +451,11 @@ fn prim_to_unknown(raw_env: sys::napi_env, val: &PrimitiveValue) -> napi::Result
 
 ---
 
-## 6. PersistentMap 完整实现
+## 6. OffHeapMap 完整实现
 
 ```rust
 #[napi]
-impl PersistentMap {
+impl OffHeapMap {
   #[napi(constructor)]
   pub fn new() -> Self {
     Self { inner: Arc::new(Mutex::new(IndexMap::new())) }
@@ -553,11 +572,11 @@ impl PersistentMap {
 
 ---
 
-## 7. PersistentArray 完整实现
+## 7. OffHeapArray 完整实现
 
 ```rust
 #[napi]
-impl PersistentArray {
+impl OffHeapArray {
   #[napi(constructor)]
   pub fn new() -> Self {
     Self { inner: Arc::new(Mutex::new(Vec::new())) }
@@ -629,7 +648,7 @@ impl PersistentArray {
     items: Vec<Unknown<'_>>,
   ) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let new_items: Vec<PersistentValue> = items
+    let new_items: Vec<OffHeapValue> = items
       .into_iter()
       .map(|v| js_to_persistent(&env, v))
       .collect::<napi::Result<_>>()?;
@@ -639,7 +658,7 @@ impl PersistentArray {
     let start = (start as usize).min(len);
     let end   = (start + delete_count as usize).min(len);
 
-    let removed: Vec<PersistentValue> = guard.drain(start..end).collect();
+    let removed: Vec<OffHeapValue> = guard.drain(start..end).collect();
     for (offset, item) in new_items.into_iter().enumerate() {
       guard.insert(start + offset, item);
     }
@@ -680,11 +699,11 @@ impl PersistentArray {
 
 ---
 
-## 8. PersistentSet 完整实现
+## 8. OffHeapSet 完整实现
 
 ```rust
 #[napi]
-impl PersistentSet {
+impl OffHeapSet {
   #[napi(constructor)]
   pub fn new() -> Self {
     Self { inner: Arc::new(Mutex::new(IndexSet::new())) }
@@ -768,32 +787,27 @@ impl PersistentSet {
 
 ## 9. 完整文件结构
 
-`src/lib.rs` 的顶层结构顺序如下：
+源码拆分为以下模块：
 
 ```
-#![deny(clippy::all)]
+src/lib.rs        — #![deny(clippy::all)] + mod 声明（无其他内容）
 
-use 语句（6 个）
+src/types.rs      — 所有类型定义
+                    PrimitiveValue enum
+                    OffHeapValue enum + 3 个 type alias
+                    3 个 #[napi] struct（OffHeapMap / OffHeapArray / OffHeapSet）
+                    注：inner 字段为 pub(crate)，JS 端仍无法访问
 
-// PrimitiveValue enum
-// PersistentValue enum + 3 个 type alias
-// 3 个 #[napi] struct（PersistentMap / PersistentArray / PersistentSet）
+src/convert.rs    — JS ↔ Rust 转换辅助函数（均为 pub(crate)）
+                    lock_err
+                    js_to_persistent / js_to_primitive
+                    to_napi_value_inner / primitive_to_napi
+                    to_unknown（unsafe fn）/ val_to_unknown / prim_to_unknown
 
-// lock_err 辅助函数
-
-// js_to_persistent
-// js_to_primitive
-
-// 注释块（解释为何用 raw 指针）
-// to_napi_value_inner
-// primitive_to_napi
-// to_unknown（unsafe fn）
-// val_to_unknown
-// prim_to_unknown
-
-// #[napi] impl PersistentMap { ... }
-// #[napi] impl PersistentArray { ... }
-// #[napi] impl PersistentSet { ... }
+src/primitive.rs  — #[napi] impl OffHeapPrimitive { ... }
+src/map.rs        — #[napi] impl OffHeapMap { ... }
+src/array.rs      — #[napi] impl OffHeapArray { ... }
+src/set.rs        — #[napi] impl OffHeapSet { ... }
 ```
 
 ---
@@ -802,17 +816,37 @@ use 语句（6 个）
 
 | 操作 | error.code | 触发条件 | error.message |
 |------|-----------|---------|---------------|
-| set/push 传入普通 JS 对象 | `InvalidArg` | Object 但非 Persistent 类型 | `plain JS objects are not accepted; wrap with PersistentMap/Array/Set` |
-| set/push/add 传入函数、Symbol 等 | `InvalidArg` | 不可识别的值类型 | `value must be a primitive or a Persistent type` |
-| PersistentSet.add 传入容器类型 | `InvalidArg` | Set 只接受基本类型，容器被 js_to_primitive 拒绝 | `value must be a primitive or a Persistent type` |
-| PersistentArray.set 越界 | `GenericFailure` | index >= length | `index 5 out of bounds (length 3)` |
+| set/push 传入普通 JS 对象 | `InvalidArg` | Object 但非 OffHeap 类型 | `plain JS objects are not accepted; wrap with OffHeapMap/Array/Set` |
+| set/push/add 传入函数、Symbol 等 | `InvalidArg` | 不可识别的值类型 | `value must be a primitive or an OffHeap type` |
+| OffHeapSet.add 传入普通对象 | `InvalidArg` | Set 只接受基本类型和 OffHeapPrimitive，其余对象被 js_to_primitive 拒绝 | `value must be a primitive or an OffHeap type` |
+| OffHeapArray.set 越界 | `GenericFailure` | index >= length | `index 5 out of bounds (length 3)` |
 | 任意操作 Mutex 中毒 | `GenericFailure` | Rust panic 后 | `lock poisoned: ...` |
 
 ---
 
-## 11. 不需要实现的内容
+## 11. OffHeapPrimitive 完整实现
 
-**`PersistentPrimitive`**：原始设计文档中提及但未完成。文档未为其定义任何方法，现有接口不接受也不返回它，基本类型本身不是 GC 负担。不实现。
+```rust
+#[napi]
+impl OffHeapPrimitive {
+  #[napi(constructor)]
+  pub fn new(env: Env, value: Unknown<'_>) -> napi::Result<Self> {
+    Ok(Self { inner: js_to_primitive(&env, value)? })
+  }
+
+  #[napi(getter)]
+  pub fn value(&self, env: Env) -> napi::Result<Unknown<'static>> {
+    prim_to_unknown(env.raw(), &self.inner)
+  }
+}
+```
+
+**透明性语义**：`OffHeapPrimitive` 被 `js_to_primitive` / `js_to_persistent` 自动解包，可直接传入 Map/Array/Set：
+- `map.set("x", new OffHeapPrimitive(42))` — 存储时解包为 `Int(42)`
+- `set.add(new OffHeapPrimitive("hello"))` — 同上
+- `map.get("x")` 返回裸 JS 原始值 `42`，不返回 `OffHeapPrimitive` 实例
+
+**为何不需要 `Arc<Mutex<T>>`**：`PrimitiveValue` 本身不可变，`Arc<str>` 已保证字符串共享，无需额外同步。
 
 ---
 
@@ -821,5 +855,5 @@ use 语句（6 个）
 - 删除/替换容器值时，`Arc` 引用计数自动递减，降至 0 时递归释放整棵子树，无需手动处理。
 - **禁止循环引用**：`Arc` 无法处理循环引用，`a.set("b", b); b.set("a", a)` 会导致 Rust 数据永久泄漏。
 - JS 壳被 GC 回收时，napi-rs 自动调用 Rust `drop`，`Arc` 引用计数 -1。
-- `push` / `add` / `PersistentMap.set` 通过 `This<'a>` 直接返回已有的 `this`，不创建新壳，无引用计数泄漏。
-- `PersistentArray.set` 返回 void，不支持链式调用。
+- `push` / `add` / `OffHeapMap.set` 通过 `This<'a>` 直接返回已有的 `this`，不创建新壳，无引用计数泄漏。
+- `OffHeapArray.set` 返回 void，不支持链式调用。

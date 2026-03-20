@@ -56,6 +56,7 @@ const {
   },
 })
 export default __napiModule.exports
-export const PersistentArray = __napiModule.exports.PersistentArray
-export const PersistentMap = __napiModule.exports.PersistentMap
-export const PersistentSet = __napiModule.exports.PersistentSet
+export const OffHeapArray = __napiModule.exports.OffHeapArray
+export const OffHeapMap = __napiModule.exports.OffHeapMap
+export const OffHeapPrimitive = __napiModule.exports.OffHeapPrimitive
+export const OffHeapSet = __napiModule.exports.OffHeapSet
