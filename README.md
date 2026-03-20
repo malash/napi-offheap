@@ -86,21 +86,6 @@ set.forEach((value, value) => {
 })
 ```
 
-### `OffHeapPrimitive`
-
-Wraps a single primitive value on the Rust heap. Accepted anywhere a primitive is expected.
-
-```ts
-const p = new OffHeapPrimitive(42)
-p.value // → 42
-
-// Transparent when passed to other containers:
-map.set('x', new OffHeapPrimitive(42)) // stored as 42
-map.get('x') // → 42 (not OffHeapPrimitive)
-
-set.add(new OffHeapPrimitive('hello')) // equivalent to set.add('hello')
-```
-
 ## Nesting containers
 
 Containers can be nested freely. A nested container shares its underlying data — mutations propagate instantly:
@@ -128,7 +113,6 @@ inner.get('a') // → 99
 | `boolean`                              | ✓             | ✓             |
 | `number`                               | ✓             | ✓             |
 | `string`                               | ✓             | ✓             |
-| `OffHeapPrimitive`                     | ✓ (unwrapped) | ✓ (unwrapped) |
 | `OffHeapMap`                           | ✓             | ✗             |
 | `OffHeapArray`                         | ✓             | ✗             |
 | `OffHeapSet`                           | ✓             | ✗             |

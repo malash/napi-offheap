@@ -22,25 +22,24 @@ impl OffHeapSet {
   pub fn add<'a>(
     &self,
     this: This<'a>,
-    env: Env,
     value: Unknown<'_>,
   ) -> napi::Result<Object<'a>> {
-    let primitive = js_to_primitive(&env, value)?;
+    let primitive = js_to_primitive(value)?;
     self.inner.lock().map_err(lock_err)?.insert(primitive);
     Ok(this.object)
   }
 
   /// set.has(value) → boolean
   #[napi]
-  pub fn has(&self, env: Env, value: Unknown<'_>) -> napi::Result<bool> {
-    let primitive = js_to_primitive(&env, value)?;
+  pub fn has(&self, value: Unknown<'_>) -> napi::Result<bool> {
+    let primitive = js_to_primitive(value)?;
     Ok(self.inner.lock().map_err(lock_err)?.contains(&primitive))
   }
 
   /// set.delete(value) → boolean
   #[napi]
-  pub fn delete(&self, env: Env, value: Unknown<'_>) -> napi::Result<bool> {
-    let primitive = js_to_primitive(&env, value)?;
+  pub fn delete(&self, value: Unknown<'_>) -> napi::Result<bool> {
+    let primitive = js_to_primitive(value)?;
     Ok(
       self
         .inner

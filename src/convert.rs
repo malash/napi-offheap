@@ -3,9 +3,7 @@ use napi::{sys, Env, ValueType};
 use ordered_float::OrderedFloat;
 use std::sync::Arc;
 
-use crate::types::{
-  OffHeapArray, OffHeapMap, OffHeapPrimitive, OffHeapSet, OffHeapValue, PrimitiveValue,
-};
+use crate::types::{OffHeapArray, OffHeapMap, OffHeapSet, OffHeapValue, PrimitiveValue};
 
 // ─── Helper: uniform lock error ───────────────────────────────────────────────
 
@@ -19,7 +17,7 @@ pub(crate) fn lock_err(e: impl std::fmt::Display) -> napi::Error {
 // ─── JS → Rust type conversion ────────────────────────────────────────────────
 
 /// Convert a JS value to OffHeapValue.
-/// Accepts OffHeapMap | OffHeapArray | OffHeapSet | OffHeapPrimitive | primitives.
+/// Accepts OffHeapMap | OffHeapArray | OffHeapSet | primitives.
 /// Rejects plain JS objects, functions, Symbols, etc.
 pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
   if val.get_type()? == ValueType::Object {
@@ -41,35 +39,17 @@ pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffH
         unsafe { ClassInstance::<'_, OffHeapSet>::from_napi_value(raw_env, raw_val)? };
       return Ok(OffHeapValue::Set(Arc::clone(&instance.inner)));
     }
-    if OffHeapPrimitive::instance_of(env, &val)? {
-      let instance =
-        unsafe { ClassInstance::<'_, OffHeapPrimitive>::from_napi_value(raw_env, raw_val)? };
-      return Ok(OffHeapValue::Primitive(instance.inner.clone()));
-    }
 
     return Err(napi::Error::new(
       napi::Status::InvalidArg,
       "plain JS objects are not accepted; wrap with OffHeapMap/Array/Set",
     ));
   }
-  Ok(OffHeapValue::Primitive(js_to_primitive(env, val)?))
+  Ok(OffHeapValue::Primitive(js_to_primitive(val)?))
 }
 
-/// Convert a JS primitive (or OffHeapPrimitive) to PrimitiveValue.
-pub(crate) fn js_to_primitive(env: &Env, val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
-  if val.get_type()? == ValueType::Object {
-    let raw_env = env.raw();
-    let raw_val = val.value().value;
-    if OffHeapPrimitive::instance_of(env, &val)? {
-      let instance =
-        unsafe { ClassInstance::<'_, OffHeapPrimitive>::from_napi_value(raw_env, raw_val)? };
-      return Ok(instance.inner.clone());
-    }
-    return Err(napi::Error::new(
-      napi::Status::InvalidArg,
-      "value must be a primitive or an OffHeap type",
-    ));
-  }
+/// Convert a JS primitive to PrimitiveValue.
+pub(crate) fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
   let v = val.value();
   match val.get_type()? {
     ValueType::Null => Ok(PrimitiveValue::Null),

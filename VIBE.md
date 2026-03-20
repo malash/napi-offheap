@@ -91,11 +91,6 @@ pub type SharedSet   = IndexSet<PrimitiveValue>;           // 保证插入顺序
 
 ```rust
 #[napi]
-pub struct OffHeapPrimitive {
-  pub(crate) inner: PrimitiveValue,  // 不需要 Arc<Mutex>，PrimitiveValue 不可变
-}
-
-#[napi]
 pub struct OffHeapMap {
   pub(crate) inner: Arc<Mutex<SharedMap>>,
 }
@@ -330,21 +325,7 @@ fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
 ### 5.3 js_to_primitive — JS 原始值 → PrimitiveValue
 
 ```rust
-fn js_to_primitive(env: &Env, val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
-  // OffHeapPrimitive 实例视为透明包装，直接解包
-  if val.get_type()? == ValueType::Object {
-    let raw_env = env.raw();
-    let raw_val = val.value().value;
-    if OffHeapPrimitive::instance_of(env, &val)? {
-      let instance =
-        unsafe { ClassInstance::<'_, OffHeapPrimitive>::from_napi_value(raw_env, raw_val)? };
-      return Ok(instance.inner.clone());
-    }
-    return Err(napi::Error::new(
-      napi::Status::InvalidArg,
-      "value must be a primitive or an OffHeap type",
-    ));
-  }
+fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
   let v = val.value();
   match val.get_type()? {
     ValueType::Null      => Ok(PrimitiveValue::Null),
@@ -373,7 +354,7 @@ fn js_to_primitive(env: &Env, val: Unknown<'_>) -> napi::Result<PrimitiveValue> 
 }
 ```
 
-`OffHeapPrimitive` 实例在此处被透明解包，因此 `OffHeapSet.add(new OffHeapPrimitive(42))` 与 `OffHeapSet.add(42)` 完全等价。
+注意：此函数**不接受 `env: &Env` 参数**，直接从 `val.value()` 取得裸指针。
 
 ### 5.4 to_napi_value_inner — OffHeapValue → sys::napi_value
 
@@ -804,7 +785,6 @@ src/convert.rs    — JS ↔ Rust 转换辅助函数（均为 pub(crate)）
                     to_napi_value_inner / primitive_to_napi
                     to_unknown（unsafe fn）/ val_to_unknown / prim_to_unknown
 
-src/primitive.rs  — #[napi] impl OffHeapPrimitive { ... }
 src/map.rs        — #[napi] impl OffHeapMap { ... }
 src/array.rs      — #[napi] impl OffHeapArray { ... }
 src/set.rs        — #[napi] impl OffHeapSet { ... }
@@ -824,29 +804,9 @@ src/set.rs        — #[napi] impl OffHeapSet { ... }
 
 ---
 
-## 11. OffHeapPrimitive 完整实现
+## 11. 不需要实现的内容
 
-```rust
-#[napi]
-impl OffHeapPrimitive {
-  #[napi(constructor)]
-  pub fn new(env: Env, value: Unknown<'_>) -> napi::Result<Self> {
-    Ok(Self { inner: js_to_primitive(&env, value)? })
-  }
-
-  #[napi(getter)]
-  pub fn value(&self, env: Env) -> napi::Result<Unknown<'static>> {
-    prim_to_unknown(env.raw(), &self.inner)
-  }
-}
-```
-
-**透明性语义**：`OffHeapPrimitive` 被 `js_to_primitive` / `js_to_persistent` 自动解包，可直接传入 Map/Array/Set：
-- `map.set("x", new OffHeapPrimitive(42))` — 存储时解包为 `Int(42)`
-- `set.add(new OffHeapPrimitive("hello"))` — 同上
-- `map.get("x")` 返回裸 JS 原始值 `42`，不返回 `OffHeapPrimitive` 实例
-
-**为何不需要 `Arc<Mutex<T>>`**：`PrimitiveValue` 本身不可变，`Arc<str>` 已保证字符串共享，无需额外同步。
+**`OffHeapPrimitive`**：原始值（number / string / boolean / null / undefined）本身不是 GC 负担，无需堆外包装。各容器的 `set` / `push` / `add` 直接接受 JS 原始值，不需要额外的包装类型。不实现。
 
 ---
 

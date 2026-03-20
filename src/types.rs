@@ -38,11 +38,6 @@ pub type SharedSet = IndexSet<PrimitiveValue>;
 // ─── napi class shells ────────────────────────────────────────────────────────
 
 #[napi]
-pub struct OffHeapPrimitive {
-  pub(crate) inner: PrimitiveValue,
-}
-
-#[napi]
 pub struct OffHeapMap {
   pub(crate) inner: Arc<Mutex<SharedMap>>,
 }
