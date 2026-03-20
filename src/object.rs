@@ -9,7 +9,6 @@ use crate::types::OffHeapObject;
 
 #[napi]
 impl OffHeapObject {
-  /// new OffHeapObject()
   #[napi(constructor)]
   pub fn new() -> Self {
     Self {
@@ -17,7 +16,6 @@ impl OffHeapObject {
     }
   }
 
-  /// obj.set(key, value) → returns this for chaining
   #[napi]
   pub fn set<'a>(
     &self,
@@ -31,7 +29,6 @@ impl OffHeapObject {
     Ok(this.object)
   }
 
-  /// obj.get(key) → value | undefined
   #[napi]
   pub fn get(&self, env: Env, key: String) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
@@ -42,38 +39,32 @@ impl OffHeapObject {
     }
   }
 
-  /// obj.has(key) → boolean
   #[napi]
   pub fn has(&self, key: String) -> napi::Result<bool> {
     Ok(self.inner.lock().map_err(lock_err)?.contains_key(&key))
   }
 
-  /// obj.delete(key) → boolean
   #[napi]
   pub fn delete(&self, key: String) -> napi::Result<bool> {
     Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&key).is_some())
   }
 
-  /// obj.clear()
   #[napi]
   pub fn clear(&self) -> napi::Result<()> {
     self.inner.lock().map_err(lock_err)?.clear();
     Ok(())
   }
 
-  /// obj.size (getter)
   #[napi(getter)]
   pub fn size(&self) -> napi::Result<u32> {
     Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
   }
 
-  /// obj.keys() → (keyof T)[]
   #[napi]
   pub fn keys(&self) -> napi::Result<Vec<String>> {
     Ok(self.inner.lock().map_err(lock_err)?.keys().cloned().collect())
   }
 
-  /// obj.values() → T[keyof T][]
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
@@ -81,7 +72,6 @@ impl OffHeapObject {
     guard.values().map(|v| val_to_unknown(raw_env, v)).collect()
   }
 
-  /// obj.entries() → [keyof T, T[keyof T]][]
   #[napi]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
@@ -99,10 +89,7 @@ impl OffHeapObject {
       .collect()
   }
 
-  /// obj.forEach(callback)
-  ///
-  /// Live iteration: releases the lock before each callback invocation so that
-  /// the callback can safely mutate the same object.
+  // Lock is released before each callback so the callback can mutate the object without deadlock.
   #[napi]
   pub fn for_each(
     &self,
@@ -115,8 +102,7 @@ impl OffHeapObject {
       let entry = {
         let guard = self.inner.lock().map_err(lock_err)?;
         guard.get_index(index).map(|(k, v)| (k.clone(), v.clone()))
-      }; // lock released here
-
+      };
       match entry {
         None => break,
         Some((key, val)) => {

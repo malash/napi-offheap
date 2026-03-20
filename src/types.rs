@@ -3,10 +3,7 @@ use napi_derive::napi;
 use ordered_float::OrderedFloat;
 use std::sync::{Arc, Mutex};
 
-// ─── Primitive value ──────────────────────────────────────────────────────────
-
-/// Can be stored directly in Set / used as Map value; must be Hash + Eq.
-/// f64 is wrapped in OrderedFloat so it satisfies those bounds.
+// f64 is wrapped in OrderedFloat to satisfy Hash + Eq (required for Map keys and Set elements).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PrimitiveValue {
   Null,
@@ -17,8 +14,6 @@ pub enum PrimitiveValue {
   Str(Arc<str>),
 }
 
-// ─── General storable value ───────────────────────────────────────────────────
-
 #[derive(Debug, Clone)]
 pub enum OffHeapValue {
   Primitive(PrimitiveValue),
@@ -28,17 +23,11 @@ pub enum OffHeapValue {
   Object(Arc<Mutex<SharedObject>>),
 }
 
-/// IndexMap preserves insertion order, matching JS Map semantics.
 pub type SharedMap = IndexMap<PrimitiveValue, OffHeapValue>;
-/// IndexMap with string keys, matching JS object semantics.
 pub type SharedObject = IndexMap<String, OffHeapValue>;
-/// Plain Vec.
 pub type SharedArray = Vec<OffHeapValue>;
-/// IndexSet preserves insertion order, matching JS Set semantics.
-/// Elements are limited to PrimitiveValue because object identity hash is unstable.
+// Set elements are limited to PrimitiveValue: object identity has no stable hash.
 pub type SharedSet = IndexSet<PrimitiveValue>;
-
-// ─── napi class shells ────────────────────────────────────────────────────────
 
 #[napi]
 pub struct OffHeapObject {

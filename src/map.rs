@@ -9,7 +9,6 @@ use crate::types::OffHeapMap;
 
 #[napi]
 impl OffHeapMap {
-  /// new OffHeapMap()
   #[napi(constructor)]
   pub fn new() -> Self {
     Self {
@@ -17,7 +16,6 @@ impl OffHeapMap {
     }
   }
 
-  /// map.set(key, value) → returns this for chaining
   #[napi]
   pub fn set<'a>(
     &self,
@@ -32,7 +30,6 @@ impl OffHeapMap {
     Ok(this.object)
   }
 
-  /// map.get(key) → OffHeapXxx | primitive | undefined
   #[napi]
   pub fn get(&self, env: Env, key: Unknown<'_>) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
@@ -44,34 +41,29 @@ impl OffHeapMap {
     }
   }
 
-  /// map.has(key) → boolean
   #[napi]
   pub fn has(&self, key: Unknown<'_>) -> napi::Result<bool> {
     let k = js_to_primitive(key)?;
     Ok(self.inner.lock().map_err(lock_err)?.contains_key(&k))
   }
 
-  /// map.delete(key) → boolean
   #[napi]
   pub fn delete(&self, key: Unknown<'_>) -> napi::Result<bool> {
     let k = js_to_primitive(key)?;
     Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&k).is_some())
   }
 
-  /// map.clear()
   #[napi]
   pub fn clear(&self) -> napi::Result<()> {
     self.inner.lock().map_err(lock_err)?.clear();
     Ok(())
   }
 
-  /// map.size (getter)
   #[napi(getter)]
   pub fn size(&self) -> napi::Result<u32> {
     Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
   }
 
-  /// map.keys() → K[]
   #[napi]
   pub fn keys(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
@@ -79,18 +71,13 @@ impl OffHeapMap {
     guard.keys().map(|k| prim_to_unknown(raw_env, k)).collect()
   }
 
-  /// map.values() → V[]
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
     let guard = self.inner.lock().map_err(lock_err)?;
-    guard
-      .values()
-      .map(|v| val_to_unknown(raw_env, v))
-      .collect()
+    guard.values().map(|v| val_to_unknown(raw_env, v)).collect()
   }
 
-  /// map.entries() → [K, V][]
   #[napi]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
@@ -107,12 +94,7 @@ impl OffHeapMap {
       .collect()
   }
 
-  /// map.forEach(callback)
-  ///
-  /// Live iteration: releases the lock before each callback invocation so that
-  /// the callback can safely mutate the same map. Uses positional index (IndexMap)
-  /// to advance the cursor, consistent with the JS Map.forEach spec for additions
-  /// and deletions that happen after the current key.
+  // Lock is released before each callback so the callback can mutate the map without deadlock.
   #[napi]
   pub fn for_each(
     &self,
@@ -122,20 +104,15 @@ impl OffHeapMap {
     let raw_env = env.raw();
     let mut index = 0usize;
     loop {
-      // Hold the lock only long enough to snapshot the current entry.
       let entry = {
         let guard = self.inner.lock().map_err(lock_err)?;
-        guard
-          .get_index(index)
-          .map(|(k, v)| (k.clone(), v.clone()))
-      }; // lock released here
-
+        guard.get_index(index).map(|(k, v)| (k.clone(), v.clone()))
+      };
       match entry {
         None => break,
         Some((key, val)) => {
           let js_val = val_to_unknown(raw_env, &val)?;
           let js_key = prim_to_unknown(raw_env, &key)?;
-          // Lock is free; callback can mutate the map without deadlock.
           callback.call(FnArgs { data: (js_val, js_key) })?;
           index += 1;
         }

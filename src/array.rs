@@ -8,7 +8,6 @@ use crate::types::{OffHeapArray, OffHeapValue};
 
 #[napi]
 impl OffHeapArray {
-  /// new OffHeapArray()
   #[napi(constructor)]
   pub fn new() -> Self {
     Self {
@@ -16,7 +15,6 @@ impl OffHeapArray {
     }
   }
 
-  /// arr.push(value) → returns this for chaining
   #[napi]
   pub fn push<'a>(
     &self,
@@ -29,7 +27,6 @@ impl OffHeapArray {
     Ok(this.object)
   }
 
-  /// arr.pop() → last element | undefined
   #[napi]
   pub fn pop(&self, env: Env) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
@@ -40,7 +37,6 @@ impl OffHeapArray {
     }
   }
 
-  /// arr.get(index) → element | undefined
   #[napi]
   pub fn get(&self, env: Env, index: u32) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
@@ -51,7 +47,6 @@ impl OffHeapArray {
     }
   }
 
-  /// arr.set(index, value)  — throws if index is out of bounds
   #[napi]
   pub fn set(&self, env: Env, index: u32, value: Unknown<'_>) -> napi::Result<()> {
     let v = js_to_persistent(&env, value)?;
@@ -67,16 +62,12 @@ impl OffHeapArray {
     Ok(())
   }
 
-  /// arr.length (getter)
   #[napi(getter)]
   pub fn length(&self) -> napi::Result<u32> {
     Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
   }
 
-  /// arr.splice(start, deleteCount, ...items) → removed elements
-  ///
-  /// Items are converted before the lock is acquired to avoid holding the lock
-  /// across JS calls.
+  // Items are converted before the lock is acquired to avoid holding the lock across JS calls.
   #[napi]
   pub fn splice(
     &self,
@@ -86,7 +77,6 @@ impl OffHeapArray {
     items: Vec<Unknown<'_>>,
   ) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    // Convert all insertion items before touching the lock.
     let new_items: Vec<OffHeapValue> = items
       .into_iter()
       .map(|v| js_to_persistent(&env, v))
@@ -101,17 +91,12 @@ impl OffHeapArray {
     for (offset, item) in new_items.into_iter().enumerate() {
       guard.insert(start + offset, item);
     }
-    drop(guard); // release lock before JS conversions
+    drop(guard);
 
-    removed
-      .iter()
-      .map(|v| val_to_unknown(raw_env, v))
-      .collect()
+    removed.iter().map(|v| val_to_unknown(raw_env, v)).collect()
   }
 
-  /// arr.forEach(callback)
-  ///
-  /// Live iteration with the same lock-release-per-step semantics as OffHeapMap.
+  // Lock is released before each callback so the callback can mutate the array without deadlock.
   #[napi]
   pub fn for_each(
     &self,
@@ -124,15 +109,13 @@ impl OffHeapArray {
       let entry = {
         let guard = self.inner.lock().map_err(lock_err)?;
         guard.get(index).cloned()
-      }; // lock released
-
+      };
       match entry {
         None => break,
         Some(val) => {
           let js_val = val_to_unknown(raw_env, &val)?;
-          let js_idx = unsafe {
-            to_unknown(raw_env, u32::to_napi_value(raw_env, index as u32)?)
-          };
+          let js_idx =
+            unsafe { to_unknown(raw_env, u32::to_napi_value(raw_env, index as u32)?) };
           callback.call(FnArgs { data: (js_val, js_idx) })?;
           index += 1;
         }

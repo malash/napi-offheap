@@ -1,21 +1,83 @@
+/**
+ * GC pause benchmark
+ *
+ * Demonstrates how large long-lived data on the V8 heap causes Mark-Compact
+ * GC pauses, and how moving that data off-heap eliminates the problem.
+ *
+ * Requires --expose-gc (added by the bench npm script).
+ *
+ * Methodology:
+ *   - beforeAll: allocate 20M long-lived elements, promote to old generation
+ *   - each iteration: allocate 500K temp objects, then call gc() and report the pause time
+ *   - afterAll: release the dataset and GC it away before the next task starts
+ */
+
 import { Bench } from 'tinybench'
 
-import { plus100 } from '../index.js'
+import { OffHeapArray } from '../index.js'
 
-function add(a: number) {
-  return a + 100
-}
+declare function gc(): void // exposed by --expose-gc
 
-const b = new Bench()
+const LARGE_N = 20_000_000
+const TEMP_N = 500_000
 
-b.add('Native a + 100', () => {
-  plus100(10)
-})
+const bench = new Bench({ warmup: false, iterations: 10 })
 
-b.add('JavaScript a + 100', () => {
-  add(10)
-})
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let keepAlive: any = null
 
-await b.run()
+bench.add(
+  'JS Array — GC pause with 20M live objects',
+  () => {
+    const temp: { x: number }[] = []
+    for (let i = 0; i < TEMP_N; i++) temp.push({ x: i })
+    void temp
 
-console.table(b.table())
+    const t = performance.now()
+    gc()
+    return { overriddenDuration: performance.now() - t }
+  },
+  {
+    beforeAll() {
+      const arr: { data: number }[] = []
+      for (let i = 0; i < LARGE_N; i++) arr.push({ data: i })
+      keepAlive = arr
+      gc()
+      gc()
+    },
+    afterAll() {
+      keepAlive = null
+      gc()
+    },
+  },
+)
+
+bench.add(
+  'OffHeapArray — GC pause with 20M live elements',
+  () => {
+    const temp: { x: number }[] = []
+    for (let i = 0; i < TEMP_N; i++) temp.push({ x: i })
+    void temp
+
+    const t = performance.now()
+    gc()
+    return { overriddenDuration: performance.now() - t }
+  },
+  {
+    beforeAll() {
+      const arr = new OffHeapArray<number>()
+      for (let i = 0; i < LARGE_N; i++) arr.push(i)
+      keepAlive = arr
+      gc()
+      gc()
+    },
+    afterAll() {
+      keepAlive = null
+      gc()
+    },
+  },
+)
+
+await bench.run()
+
+console.table(bench.table())
