@@ -99,7 +99,8 @@ test('OffHeapSet: forEach receives (value, value) per spec', (t) => {
   ])
 })
 
-test('OffHeapSet: forEach callback can delete current value without deadlock', (t) => {
+test('OffHeapSet: forEach visits all entries even when current value is deleted', (t) => {
+  // JS Set.forEach: deleting the current value does not skip the next entry.
   const set = new OffHeapSet<number>()
   set.add(1).add(2).add(3)
   const visited: number[] = []
@@ -107,11 +108,21 @@ test('OffHeapSet: forEach callback can delete current value without deadlock', (
     visited.push(v as number)
     set.delete(v as number)
   })
-  // IndexSet shifts elements left after each delete, so the cursor skips every
-  // other entry: 1 (idx 0) and 3 (now idx 1 after shift) are visited; 2 is skipped.
-  t.deepEqual(visited, [1, 3])
-  t.is(set.size, 1)
-  t.true(set.has(2))
+  t.deepEqual(visited, [1, 2, 3])
+  t.is(set.size, 0)
+})
+
+test('OffHeapSet: forEach visits new entries added during iteration', (t) => {
+  // JS Set.forEach: entries added during iteration are visited.
+  const set = new OffHeapSet<number>()
+  set.add(1)
+  const visited: number[] = []
+  set.forEach((v) => {
+    visited.push(v as number)
+    if (v === 1) set.add(2)
+    if (v === 2) set.add(3)
+  })
+  t.deepEqual(visited, [1, 2, 3])
 })
 
 test('OffHeapSet: forEach on empty set does not invoke callback', (t) => {

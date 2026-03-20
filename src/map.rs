@@ -103,11 +103,11 @@ impl OffHeapMap {
     callback: Function<'_, FnArgs<(Unknown<'static>, Unknown<'static>)>, Unknown<'static>>,
   ) -> napi::Result<()> {
     let raw_env = env.raw();
-    let mut index = 0usize;
+    let mut next_index = 0usize;
     loop {
       let entry = {
         let guard = self.inner.lock().map_err(lock_err)?;
-        guard.get_index(index).map(|(k, v)| (k.clone(), v.clone()))
+        guard.get_index(next_index).map(|(k, v)| (k.clone(), v.clone()))
       };
       match entry {
         None => break,
@@ -115,7 +115,14 @@ impl OffHeapMap {
           let js_val = val_to_unknown(raw_env, &val)?;
           let js_key = prim_to_unknown(raw_env, &key)?;
           callback.call(FnArgs { data: (js_val, js_key) })?;
-          index += 1;
+          // Re-locate the key: if it was deleted the slot is now occupied by the
+          // element that shifted left, so next_index stays; otherwise advance past it.
+          next_index = self
+            .inner
+            .lock()
+            .map_err(lock_err)?
+            .get_index_of(&key)
+            .map_or(next_index, |pos| pos + 1);
         }
       }
     }

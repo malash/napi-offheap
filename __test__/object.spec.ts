@@ -106,7 +106,8 @@ test('OffHeapObject: forEach callback can overwrite values without deadlock', (t
   t.is(obj.get('b'), 99)
 })
 
-test('OffHeapObject: forEach callback can delete keys without deadlock', (t) => {
+test('OffHeapObject: forEach visits all entries even when current key is deleted', (t) => {
+  // Mirrors JS Map.forEach: deleting the current key does not skip the next entry.
   const obj = new OffHeapObject()
   obj.set('a', 1).set('b', 2).set('c', 3)
   const visited: string[] = []
@@ -114,12 +115,21 @@ test('OffHeapObject: forEach callback can delete keys without deadlock', (t) => 
     visited.push(key)
     obj.delete(key)
   })
-  // IndexMap shifts elements left after each delete, so the cursor skips every
-  // other entry: 'a' (idx 0) and 'c' (now idx 1 after shift) are visited; 'b'
-  // (which became idx 0 then shifted to idx 0 again) is skipped.
-  t.deepEqual(visited, ['a', 'c'])
-  t.is(obj.size, 1)
-  t.true(obj.has('b'))
+  t.deepEqual(visited, ['a', 'b', 'c'])
+  t.is(obj.size, 0)
+})
+
+test('OffHeapObject: forEach visits new entries added during iteration', (t) => {
+  // Mirrors JS Map.forEach: entries added during iteration are visited.
+  const obj = new OffHeapObject()
+  obj.set('a', 1)
+  const visited: string[] = []
+  obj.forEach((_value, key) => {
+    visited.push(key)
+    if (key === 'a') obj.set('b', 2)
+    if (key === 'b') obj.set('c', 3)
+  })
+  t.deepEqual(visited, ['a', 'b', 'c'])
 })
 
 test('OffHeapObject: set returns this for chaining', (t) => {

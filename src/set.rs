@@ -65,11 +65,11 @@ impl OffHeapSet {
     callback: Function<'_, FnArgs<(Unknown<'static>, Unknown<'static>)>, Unknown<'static>>,
   ) -> napi::Result<()> {
     let raw_env = env.raw();
-    let mut index = 0usize;
+    let mut next_index = 0usize;
     loop {
       let entry = {
         let guard = self.inner.lock().map_err(lock_err)?;
-        guard.get_index(index).cloned()
+        guard.get_index(next_index).cloned()
       };
       match entry {
         None => break,
@@ -77,7 +77,12 @@ impl OffHeapSet {
           let js_val1 = prim_to_unknown(raw_env, &primitive)?;
           let js_val2 = prim_to_unknown(raw_env, &primitive)?;
           callback.call(FnArgs { data: (js_val1, js_val2) })?;
-          index += 1;
+          next_index = self
+            .inner
+            .lock()
+            .map_err(lock_err)?
+            .get_index_of(&primitive)
+            .map_or(next_index, |pos| pos + 1);
         }
       }
     }
