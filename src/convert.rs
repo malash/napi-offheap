@@ -2,7 +2,7 @@ use arcstr::ArcStr;
 use napi::bindgen_prelude::*;
 use napi::{sys, Env, ValueType};
 use ordered_float::OrderedFloat;
-use std::sync::Arc;
+use triomphe::Arc;
 
 use crate::types::{
   OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet, OffHeapValue, PrimitiveValue,
@@ -141,19 +141,43 @@ pub(crate) fn to_napi_value_inner(
       OffHeapValue::Str(s) => <&str>::to_napi_value(raw_env, s.as_ref()),
       OffHeapValue::Map(arc) => {
         let env = Env::from_raw(raw_env);
-        Ok(OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+        Ok(
+          OffHeapMap {
+            inner: Arc::clone(arc),
+          }
+          .into_instance(&env)?
+          .value,
+        )
       }
       OffHeapValue::Array(arc) => {
         let env = Env::from_raw(raw_env);
-        Ok(OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+        Ok(
+          OffHeapArray {
+            inner: Arc::clone(arc),
+          }
+          .into_instance(&env)?
+          .value,
+        )
       }
       OffHeapValue::Set(arc) => {
         let env = Env::from_raw(raw_env);
-        Ok(OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+        Ok(
+          OffHeapSet {
+            inner: Arc::clone(arc),
+          }
+          .into_instance(&env)?
+          .value,
+        )
       }
       OffHeapValue::Object(arc) => {
         let env = Env::from_raw(raw_env);
-        Ok(OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?.value)
+        Ok(
+          OffHeapObject {
+            inner: Arc::clone(arc),
+          }
+          .into_instance(&env)?
+          .value,
+        )
       }
     }
   }

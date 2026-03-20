@@ -189,7 +189,14 @@ test('OffHeapMap: all primitive key types coexist', (t) => {
 test('OffHeapMap: [Symbol.iterator] yields [key, value] pairs in insertion order', (t) => {
   const map = new OffHeapMap()
   map.set('a', 1).set('b', 2).set('c', 3)
-  t.deepEqual([...map], [['a', 1], ['b', 2], ['c', 3]])
+  t.deepEqual(
+    [...map],
+    [
+      ['a', 1],
+      ['b', 2],
+      ['c', 3],
+    ],
+  )
 })
 
 test('OffHeapMap: for...of destructuring works', (t) => {
@@ -199,7 +206,10 @@ test('OffHeapMap: for...of destructuring works', (t) => {
   for (const [k, v] of map) {
     result.push([k, v])
   }
-  t.deepEqual(result, [['x', 10], ['y', 20]])
+  t.deepEqual(result, [
+    ['x', 10],
+    ['y', 20],
+  ])
 })
 
 test('OffHeapMap: [Symbol.iterator] on empty map yields nothing', (t) => {

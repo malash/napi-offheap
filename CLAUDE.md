@@ -29,11 +29,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 arcstr        = "1"
+indexmap      = "2"
 napi          = "3.0.0"
 napi-derive   = "3.0.0"
-indexmap      = "2"
 ordered-float = "4"
 parking_lot   = "0.12"
+triomphe      = "0.1"
 
 [build-dependencies]
 napi-build = "2"
@@ -98,6 +99,7 @@ pub type SharedSet = IndexSet<PrimitiveValue>;
 
 - `Arc`：多个 JS 壳可共享同一份数据
 - `Mutex`：`#[napi]` 方法接收 `&self`，需要内部可变性
+- 使用 `triomphe::Arc`（不是 `std::sync::Arc`）：省去 weak_count 字段，每个容器堆分配节省 8 字节
 - 使用 `parking_lot::Mutex`：不会发生 lock poisoning（与 `std::sync::Mutex` 不同），`lock()` 直接返回 guard，无需 `.unwrap()` 或错误处理
 
 ### 3.3 napi class 壳
@@ -126,7 +128,7 @@ pub struct OffHeapSet {
 
 字段均为 `pub(crate)`：crate 内跨模块可访问，JS 端无法直接访问。
 
-`Mutex` 来自 `parking_lot`（`use parking_lot::Mutex`），不是 `std::sync::Mutex`。`ArcStr` 来自 `arcstr` crate，不是 `std::sync::Arc`。
+`Arc` 来自 `triomphe`（`use triomphe::Arc`），不是 `std::sync::Arc`。`Mutex` 来自 `parking_lot`（`use parking_lot::Mutex`），不是 `std::sync::Mutex`。
 
 ---
 

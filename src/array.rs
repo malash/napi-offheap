@@ -2,7 +2,7 @@ use napi::bindgen_prelude::*;
 use napi::Env;
 use napi_derive::napi;
 use parking_lot::Mutex;
-use std::sync::Arc;
+use triomphe::Arc;
 
 use crate::convert::{js_to_persistent, prim_to_unknown, undefined_to_unknown, val_to_unknown};
 use crate::types::{OffHeapArray, OffHeapValue, PrimitiveValue};

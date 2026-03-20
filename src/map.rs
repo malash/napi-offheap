@@ -3,7 +3,7 @@ use napi::bindgen_prelude::*;
 use napi::Env;
 use napi_derive::napi;
 use parking_lot::Mutex;
-use std::sync::Arc;
+use triomphe::Arc;
 
 use crate::convert::{
   array_to_unknown, js_to_persistent, js_to_primitive, prim_to_unknown, undefined_to_unknown,
