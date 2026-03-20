@@ -1,3 +1,4 @@
+use arcstr::ArcStr;
 use indexmap::{IndexMap, IndexSet};
 use napi_derive::napi;
 use ordered_float::OrderedFloat;
@@ -12,7 +13,7 @@ pub enum PrimitiveValue {
   Bool(bool),
   Int(i64),
   Float(OrderedFloat<f64>),
-  Str(Arc<str>),
+  Str(ArcStr),
 }
 
 #[derive(Debug, Clone)]
@@ -22,7 +23,7 @@ pub enum OffHeapValue {
   Bool(bool),
   Int(i64),
   Float(OrderedFloat<f64>),
-  Str(Arc<str>),
+  Str(ArcStr),
   Map(Arc<Mutex<SharedMap>>),
   Array(Arc<Mutex<SharedArray>>),
   Set(Arc<Mutex<SharedSet>>),

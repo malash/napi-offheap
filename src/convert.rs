@@ -1,3 +1,4 @@
+use arcstr::ArcStr;
 use napi::bindgen_prelude::*;
 use napi::{sys, Env, ValueType};
 use ordered_float::OrderedFloat;
@@ -57,7 +58,7 @@ fn js_to_primitive_ty(ty: ValueType, val: Unknown<'_>) -> napi::Result<Primitive
         Ok(PrimitiveValue::Float(OrderedFloat(n)))
       }
     }
-    ValueType::String => Ok(PrimitiveValue::Str(Arc::from(
+    ValueType::String => Ok(PrimitiveValue::Str(ArcStr::from(
       string_from_unknown(val)?.as_str(),
     ))),
     _ => Err(napi::Error::new(
@@ -80,7 +81,7 @@ fn js_primitive_ty_to_value(ty: ValueType, val: Unknown<'_>) -> napi::Result<Off
         Ok(OffHeapValue::Float(OrderedFloat(n)))
       }
     }
-    ValueType::String => Ok(OffHeapValue::Str(Arc::from(
+    ValueType::String => Ok(OffHeapValue::Str(ArcStr::from(
       string_from_unknown(val)?.as_str(),
     ))),
     _ => Err(napi::Error::new(

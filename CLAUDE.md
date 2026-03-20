@@ -28,11 +28,12 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi        = "3.0.0"
-napi-derive = "3.0.0"
-indexmap    = "2"
+arcstr        = "1"
+napi          = "3.0.0"
+napi-derive   = "3.0.0"
+indexmap      = "2"
 ordered-float = "4"
-parking_lot = "0.12"
+parking_lot   = "0.12"
 
 [build-dependencies]
 napi-build = "2"
@@ -58,12 +59,13 @@ pub enum PrimitiveValue {
   Bool(bool),
   Int(i64),
   Float(OrderedFloat<f64>),  // f64 原生不能 Hash，用 OrderedFloat 包装
-  Str(Arc<str>),             // Arc 避免 clone 时深拷贝字符串
+  Str(ArcStr),               // thin pointer (8 bytes)，比 Arc<str>(16 bytes) 小一半
 }
 ```
 
 - JS `number` 统一先读成 `f64`，若 `fract() == 0.0` 且在 `i64` 范围内则存为 `Int`，否则存为 `Float`。
 - 变体名为 `Str`（不是 `String`，避免与 Rust 内置类型重名）。
+- `ArcStr`（来自 `arcstr` crate）是 thin pointer，8 字节；`Arc<str>` 是 fat pointer（ptr + len），16 字节。将两个枚举从 24 字节压缩到 16 字节。
 
 ### 3.2 OffHeapValue
 
@@ -75,7 +77,7 @@ pub enum OffHeapValue {
   Bool(bool),
   Int(i64),
   Float(OrderedFloat<f64>),
-  Str(Arc<str>),
+  Str(ArcStr),
   Map(Arc<Mutex<SharedMap>>),
   Array(Arc<Mutex<SharedArray>>),
   Set(Arc<Mutex<SharedSet>>),
@@ -124,7 +126,7 @@ pub struct OffHeapSet {
 
 字段均为 `pub(crate)`：crate 内跨模块可访问，JS 端无法直接访问。
 
-`Mutex` 来自 `parking_lot`（`use parking_lot::Mutex`），不是 `std::sync::Mutex`。
+`Mutex` 来自 `parking_lot`（`use parking_lot::Mutex`），不是 `std::sync::Mutex`。`ArcStr` 来自 `arcstr` crate，不是 `std::sync::Arc`。
 
 ---
 
@@ -359,7 +361,7 @@ fn js_to_primitive_ty(ty: ValueType, val: Unknown<'_>) -> napi::Result<Primitive
         Ok(PrimitiveValue::Float(OrderedFloat(n)))
       }
     }
-    ValueType::String => Ok(PrimitiveValue::Str(Arc::from(
+    ValueType::String => Ok(PrimitiveValue::Str(ArcStr::from(
       string_from_unknown(val)?.as_str(),
     ))),
     _ => Err(napi::Error::new(
@@ -405,7 +407,7 @@ fn js_primitive_ty_to_value(ty: ValueType, val: Unknown<'_>) -> napi::Result<Off
         Ok(OffHeapValue::Float(OrderedFloat(n)))
       }
     }
-    ValueType::String => Ok(OffHeapValue::Str(Arc::from(
+    ValueType::String => Ok(OffHeapValue::Str(ArcStr::from(
       string_from_unknown(val)?.as_str(),
     ))),
     _ => Err(napi::Error::new(
