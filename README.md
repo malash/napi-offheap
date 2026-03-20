@@ -18,6 +18,38 @@ npm install napi-offheap
 
 ## API
 
+### `OffHeapObject<T>`
+
+Strongly-typed off-heap replacement for plain JS objects. String keys, with per-key value types via the `T` type parameter.
+
+```ts
+import { OffHeapObject } from 'napi-offheap'
+
+interface User {
+  name: string
+  age: number
+}
+
+const user = new OffHeapObject<User>()
+
+user.set('name', 'alice').set('age', 30) // chainable
+user.get('name') // → 'alice'  (type: string | undefined)
+user.get('age')  // → 30      (type: number | undefined)
+user.has('name') // → true
+user.delete('name') // → true
+
+user.size      // getter → number
+user.keys()    // → (keyof User & string)[]
+user.values()  // → User[keyof User][]
+user.entries() // → [keyof User & string, User[keyof User]][]
+
+user.forEach((value: User[keyof User], key: keyof User & string) => {
+  /* ... */
+})
+```
+
+> **vs `OffHeapMap<string, V>`**: `OffHeapObject<T>` provides per-key TypeScript types via `T[K]`, matching how plain JS objects are typed. `OffHeapMap<K, V>` supports any primitive key but all values share one type `V`.
+
 ### `OffHeapMap<K, V>`
 
 Ordered key-value map (preserves insertion order, like JS `Map`). Keys can be any primitive: `string`, `number`, `boolean`, `null`, or `undefined`.
@@ -120,16 +152,17 @@ inner.get('a') // → 99
 
 ## Accepted value types
 
-| Type                                   | Map/Array | Set |
-| -------------------------------------- | --------- | --- |
-| `null` / `undefined`                   | ✓         | ✓   |
-| `boolean`                              | ✓         | ✓   |
-| `number`                               | ✓         | ✓   |
-| `string`                               | ✓         | ✓   |
-| `OffHeapMap`                           | ✓         | ✗   |
-| `OffHeapArray`                         | ✓         | ✗   |
-| `OffHeapSet`                           | ✓         | ✗   |
-| Plain JS objects / functions / Symbols | ✗         | ✗   |
+| Type                                   | Map/Array/Object | Set |
+| -------------------------------------- | ---------------- | --- |
+| `null` / `undefined`                   | ✓                | ✓   |
+| `boolean`                              | ✓                | ✓   |
+| `number`                               | ✓                | ✓   |
+| `string`                               | ✓                | ✓   |
+| `OffHeapObject`                        | ✓                | ✗   |
+| `OffHeapMap`                           | ✓                | ✗   |
+| `OffHeapArray`                         | ✓                | ✗   |
+| `OffHeapSet`                           | ✓                | ✗   |
+| Plain JS objects / functions / Symbols | ✗                | ✗   |
 
 ## Build from source
 

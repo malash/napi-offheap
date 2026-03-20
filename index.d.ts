@@ -3,6 +3,30 @@
 
 export type Primitive = string | number | boolean | null | undefined
 
+export declare class OffHeapObject<T extends Record<string, unknown> = Record<string, unknown>> {
+  constructor()
+  /** obj.set(key, value) → returns this for chaining */
+  set<K extends keyof T & string>(key: K, value: T[K]): this
+  /** obj.get(key) → T[K] | undefined */
+  get<K extends keyof T & string>(key: K): T[K] | undefined
+  /** obj.has(key) → boolean */
+  has(key: keyof T & string): boolean
+  /** obj.delete(key) → boolean */
+  delete(key: keyof T & string): boolean
+  /** obj.clear() */
+  clear(): void
+  /** obj.size (getter) */
+  get size(): number
+  /** obj.keys() → (keyof T)[] */
+  keys(): Array<keyof T & string>
+  /** obj.values() → T[keyof T][] */
+  values(): Array<T[keyof T & string]>
+  /** obj.entries() → [keyof T, T[keyof T]][] */
+  entries(): Array<[keyof T & string, T[keyof T & string]]>
+  /** obj.forEach(callback) */
+  forEach(callback: (value: T[keyof T & string], key: keyof T & string) => unknown): void
+}
+
 export declare class OffHeapArray<T = unknown> {
   constructor()
   /** arr.push(value) → returns this for chaining */

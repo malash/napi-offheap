@@ -25,10 +25,13 @@ pub enum OffHeapValue {
   Map(Arc<Mutex<SharedMap>>),
   Array(Arc<Mutex<SharedArray>>),
   Set(Arc<Mutex<SharedSet>>),
+  Object(Arc<Mutex<SharedObject>>),
 }
 
 /// IndexMap preserves insertion order, matching JS Map semantics.
 pub type SharedMap = IndexMap<PrimitiveValue, OffHeapValue>;
+/// IndexMap with string keys, matching JS object semantics.
+pub type SharedObject = IndexMap<String, OffHeapValue>;
 /// Plain Vec.
 pub type SharedArray = Vec<OffHeapValue>;
 /// IndexSet preserves insertion order, matching JS Set semantics.
@@ -36,6 +39,11 @@ pub type SharedArray = Vec<OffHeapValue>;
 pub type SharedSet = IndexSet<PrimitiveValue>;
 
 // ─── napi class shells ────────────────────────────────────────────────────────
+
+#[napi]
+pub struct OffHeapObject {
+  pub(crate) inner: Arc<Mutex<SharedObject>>,
+}
 
 #[napi]
 pub struct OffHeapMap {

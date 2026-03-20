@@ -557,6 +557,7 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.OffHeapObject = nativeBinding.OffHeapObject
 module.exports.OffHeapArray = nativeBinding.OffHeapArray
 module.exports.OffHeapMap = nativeBinding.OffHeapMap
 module.exports.OffHeapSet = nativeBinding.OffHeapSet

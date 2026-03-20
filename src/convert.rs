@@ -3,7 +3,7 @@ use napi::{sys, Env, ValueType};
 use ordered_float::OrderedFloat;
 use std::sync::Arc;
 
-use crate::types::{OffHeapArray, OffHeapMap, OffHeapSet, OffHeapValue, PrimitiveValue};
+use crate::types::{OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet, OffHeapValue, PrimitiveValue};
 
 // ─── Helper: uniform lock error ───────────────────────────────────────────────
 
@@ -39,10 +39,15 @@ pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffH
         unsafe { ClassInstance::<'_, OffHeapSet>::from_napi_value(raw_env, raw_val)? };
       return Ok(OffHeapValue::Set(Arc::clone(&instance.inner)));
     }
+    if OffHeapObject::instance_of(env, &val)? {
+      let instance =
+        unsafe { ClassInstance::<'_, OffHeapObject>::from_napi_value(raw_env, raw_val)? };
+      return Ok(OffHeapValue::Object(Arc::clone(&instance.inner)));
+    }
 
     return Err(napi::Error::new(
       napi::Status::InvalidArg,
-      "plain JS objects are not accepted; wrap with OffHeapMap/Array/Set",
+      "plain JS objects are not accepted; wrap with OffHeapMap/Array/Set/Object",
     ));
   }
   Ok(OffHeapValue::Primitive(js_to_primitive(val)?))
@@ -111,6 +116,14 @@ pub(crate) fn to_napi_value_inner(
     OffHeapValue::Set(arc) => {
       let env = Env::from_raw(raw_env);
       let instance = OffHeapSet {
+        inner: Arc::clone(arc),
+      }
+      .into_instance(&env)?;
+      Ok(instance.value)
+    }
+    OffHeapValue::Object(arc) => {
+      let env = Env::from_raw(raw_env);
+      let instance = OffHeapObject {
         inner: Arc::clone(arc),
       }
       .into_instance(&env)?;
