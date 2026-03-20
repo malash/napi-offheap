@@ -3,7 +3,9 @@ use napi::{sys, Env, ValueType};
 use ordered_float::OrderedFloat;
 use std::sync::Arc;
 
-use crate::types::{OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet, OffHeapValue, PrimitiveValue};
+use crate::types::{
+  OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet, OffHeapValue, PrimitiveValue,
+};
 
 pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
   let ty = val.get_type()?;
@@ -12,8 +14,7 @@ pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffH
     let raw_val = val.value().value;
 
     if OffHeapMap::instance_of(env, &val)? {
-      let instance =
-        unsafe { ClassInstance::<'_, OffHeapMap>::from_napi_value(raw_env, raw_val)? };
+      let instance = unsafe { ClassInstance::<'_, OffHeapMap>::from_napi_value(raw_env, raw_val)? };
       return Ok(OffHeapValue::Map(Arc::clone(&instance.inner)));
     }
     if OffHeapArray::instance_of(env, &val)? {
@@ -22,8 +23,7 @@ pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffH
       return Ok(OffHeapValue::Array(Arc::clone(&instance.inner)));
     }
     if OffHeapSet::instance_of(env, &val)? {
-      let instance =
-        unsafe { ClassInstance::<'_, OffHeapSet>::from_napi_value(raw_env, raw_val)? };
+      let instance = unsafe { ClassInstance::<'_, OffHeapSet>::from_napi_value(raw_env, raw_val)? };
       return Ok(OffHeapValue::Set(Arc::clone(&instance.inner)));
     }
     if OffHeapObject::instance_of(env, &val)? {
@@ -57,7 +57,9 @@ fn js_to_primitive_ty(ty: ValueType, val: Unknown<'_>) -> napi::Result<Primitive
         Ok(PrimitiveValue::Float(OrderedFloat(n)))
       }
     }
-    ValueType::String => Ok(PrimitiveValue::Str(Arc::from(string_from_unknown(val)?.as_str()))),
+    ValueType::String => Ok(PrimitiveValue::Str(Arc::from(
+      string_from_unknown(val)?.as_str(),
+    ))),
     _ => Err(napi::Error::new(
       napi::Status::InvalidArg,
       "value must be a primitive or an OffHeap type",
@@ -115,10 +117,34 @@ pub(crate) fn to_napi_value_inner(
   let env = Env::from_raw(raw_env);
   let instance_value = match val {
     OffHeapValue::Primitive(_) => unreachable!(),
-    OffHeapValue::Map(arc) => OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?.value,
-    OffHeapValue::Array(arc) => OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?.value,
-    OffHeapValue::Set(arc) => OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?.value,
-    OffHeapValue::Object(arc) => OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?.value,
+    OffHeapValue::Map(arc) => {
+      OffHeapMap {
+        inner: Arc::clone(arc),
+      }
+      .into_instance(&env)?
+      .value
+    }
+    OffHeapValue::Array(arc) => {
+      OffHeapArray {
+        inner: Arc::clone(arc),
+      }
+      .into_instance(&env)?
+      .value
+    }
+    OffHeapValue::Set(arc) => {
+      OffHeapSet {
+        inner: Arc::clone(arc),
+      }
+      .into_instance(&env)?
+      .value
+    }
+    OffHeapValue::Object(arc) => {
+      OffHeapObject {
+        inner: Arc::clone(arc),
+      }
+      .into_instance(&env)?
+      .value
+    }
   };
   Ok(instance_value)
 }

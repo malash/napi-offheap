@@ -17,12 +17,7 @@ impl OffHeapArray {
   }
 
   #[napi]
-  pub fn push<'a>(
-    &self,
-    this: This<'a>,
-    env: Env,
-    value: Unknown<'_>,
-  ) -> napi::Result<Object<'a>> {
+  pub fn push<'a>(&self, this: This<'a>, env: Env, value: Unknown<'_>) -> napi::Result<Object<'a>> {
     let v = js_to_persistent(&env, value)?;
     self.inner.lock().push(v);
     Ok(this.object)
@@ -110,7 +105,9 @@ impl OffHeapArray {
         let js_val = val_to_unknown(raw_env, &val)?;
         let idx_u32 = u32::try_from(index).unwrap_or(u32::MAX);
         let js_idx = prim_to_unknown(raw_env, &PrimitiveValue::Int(idx_u32 as i64))?;
-        callback.call(FnArgs { data: (js_val, js_idx) })?;
+        callback.call(FnArgs {
+          data: (js_val, js_idx),
+        })?;
       }
     }
     Ok(())

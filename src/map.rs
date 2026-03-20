@@ -5,7 +5,10 @@ use napi_derive::napi;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::convert::{array_to_unknown, js_to_persistent, js_to_primitive, prim_to_unknown, undefined_to_unknown, val_to_unknown};
+use crate::convert::{
+  array_to_unknown, js_to_persistent, js_to_primitive, prim_to_unknown, undefined_to_unknown,
+  val_to_unknown,
+};
 use crate::types::{OffHeapMap, OffHeapValue, PrimitiveValue};
 
 #[napi]
@@ -82,8 +85,12 @@ impl OffHeapMap {
   #[napi]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let entries: Vec<(PrimitiveValue, OffHeapValue)> =
-      self.inner.lock().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let entries: Vec<(PrimitiveValue, OffHeapValue)> = self
+      .inner
+      .lock()
+      .iter()
+      .map(|(k, v)| (k.clone(), v.clone()))
+      .collect();
     entries
       .iter()
       .map(|(k, v)| {
@@ -108,14 +115,18 @@ impl OffHeapMap {
     loop {
       let entry = {
         let guard = self.inner.lock();
-        guard.get_index(next_index).map(|(k, v)| (k.clone(), v.clone()))
+        guard
+          .get_index(next_index)
+          .map(|(k, v)| (k.clone(), v.clone()))
       };
       match entry {
         None => break,
         Some((key, val)) => {
           let js_val = val_to_unknown(raw_env, &val)?;
           let js_key = prim_to_unknown(raw_env, &key)?;
-          callback.call(FnArgs { data: (js_val, js_key) })?;
+          callback.call(FnArgs {
+            data: (js_val, js_key),
+          })?;
           // Re-locate the key: if it was deleted the slot is now occupied by the
           // element that shifted left, so next_index stays; otherwise advance past it.
           next_index = self

@@ -18,11 +18,7 @@ impl OffHeapSet {
   }
 
   #[napi]
-  pub fn add<'a>(
-    &self,
-    this: This<'a>,
-    value: Unknown<'_>,
-  ) -> napi::Result<Object<'a>> {
+  pub fn add<'a>(&self, this: This<'a>, value: Unknown<'_>) -> napi::Result<Object<'a>> {
     let primitive = js_to_primitive(value)?;
     self.inner.lock().insert(primitive);
     Ok(this.object)
@@ -76,7 +72,9 @@ impl OffHeapSet {
         None => break,
         Some(primitive) => {
           let js_val = prim_to_unknown(raw_env, &primitive)?;
-          callback.call(FnArgs { data: (js_val, js_val) })?;
+          callback.call(FnArgs {
+            data: (js_val, js_val),
+          })?;
           next_index = self
             .inner
             .lock()

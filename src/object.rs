@@ -5,7 +5,10 @@ use napi_derive::napi;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::convert::{array_to_unknown, js_to_object_key, js_to_persistent, str_to_unknown, undefined_to_unknown, val_to_unknown};
+use crate::convert::{
+  array_to_unknown, js_to_object_key, js_to_persistent, str_to_unknown, undefined_to_unknown,
+  val_to_unknown,
+};
 use crate::types::{OffHeapObject, OffHeapValue};
 
 #[napi]
@@ -80,8 +83,12 @@ impl OffHeapObject {
   #[napi]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let entries: Vec<(String, OffHeapValue)> =
-      self.inner.lock().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let entries: Vec<(String, OffHeapValue)> = self
+      .inner
+      .lock()
+      .iter()
+      .map(|(k, v)| (k.clone(), v.clone()))
+      .collect();
     entries
       .iter()
       .map(|(k, v)| {
@@ -106,14 +113,18 @@ impl OffHeapObject {
     loop {
       let entry = {
         let guard = self.inner.lock();
-        guard.get_index(next_index).map(|(k, v)| (k.clone(), v.clone()))
+        guard
+          .get_index(next_index)
+          .map(|(k, v)| (k.clone(), v.clone()))
       };
       match entry {
         None => break,
         Some((key, val)) => {
           let js_val = val_to_unknown(raw_env, &val)?;
           let js_key = str_to_unknown(raw_env, &key)?;
-          callback.call(FnArgs { data: (js_val, js_key) })?;
+          callback.call(FnArgs {
+            data: (js_val, js_key),
+          })?;
           next_index = self
             .inner
             .lock()

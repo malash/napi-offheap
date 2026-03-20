@@ -1,8 +1,9 @@
 #![deny(clippy::all)]
 
 mod types;
-mod convert;
-mod object;
-mod map;
+
 mod array;
+mod convert;
+mod map;
+mod object;
 mod set;
