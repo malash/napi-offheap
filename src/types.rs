@@ -24,6 +24,7 @@ pub enum OffHeapValue {
 }
 
 pub type SharedMap = IndexMap<PrimitiveValue, OffHeapValue>;
+// String keys only — number keys are coerced to strings on write, matching JS object semantics.
 pub type SharedObject = IndexMap<String, OffHeapValue>;
 pub type SharedArray = Vec<OffHeapValue>;
 // Set elements are limited to PrimitiveValue: object identity has no stable hash.

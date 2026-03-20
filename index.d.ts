@@ -4,104 +4,53 @@ export type Primitive = string | number | boolean | null | undefined
 
 export declare class OffHeapObject<T extends Record<string, unknown> = Record<string, unknown>> {
   constructor()
-  /** obj.set(key, value) → returns this for chaining */
-  set<K extends keyof T & string>(key: K, value: T[K]): this
-  /** obj.get(key) → T[K] | undefined */
-  get<K extends keyof T & string>(key: K): T[K] | undefined
-  /** obj.has(key) → boolean */
-  has(key: keyof T & string): boolean
-  /** obj.delete(key) → boolean */
-  delete(key: keyof T & string): boolean
-  /** obj.clear() */
+  /** Number keys are coerced to strings, matching JS object semantics. */
+  set<K extends keyof T & string>(key: K | number, value: T[K]): this
+  get<K extends keyof T & string>(key: K | number): T[K] | undefined
+  has(key: string | number): boolean
+  delete(key: string | number): boolean
   clear(): void
-  /** obj.size (getter) */
   get size(): number
-  /** obj.keys() → (keyof T)[] */
   keys(): Array<keyof T & string>
-  /** obj.values() → T[keyof T][] */
   values(): Array<T[keyof T & string]>
-  /** obj.entries() → [keyof T, T[keyof T]][] */
   entries(): Array<[keyof T & string, T[keyof T & string]]>
-  /** obj.forEach(callback) */
   forEach(callback: (value: T[keyof T & string], key: keyof T & string) => unknown): void
 }
 
 export declare class OffHeapArray<T = unknown> {
   constructor()
-  /** arr.push(value) → returns this for chaining */
   push(value: T): this
-  /** arr.pop() → last element | undefined */
   pop(): T | undefined
-  /** arr.get(index) → element | undefined */
   get(index: number): T | undefined
-  /** arr.set(index, value) — throws if index is out of bounds */
+  /** throws if index is out of bounds */
   set(index: number, value: T): void
-  /** arr.length (getter) */
   get length(): number
-  /**
-   * arr.splice(start, deleteCount, items) → removed elements
-   *
-   * Items are converted before the lock is acquired to avoid holding the lock
-   * across JS calls.
-   */
   splice(start: number, deleteCount: number, items: T[]): T[]
-  /**
-   * arr.forEach(callback)
-   *
-   * Live iteration with the same lock-release-per-step semantics as OffHeapMap.
-   */
   forEach(callback: (value: T, index: number) => unknown): void
 }
 
 export declare class OffHeapMap<K extends Primitive = Primitive, V = unknown> {
   constructor()
-  /** map.set(key, value) → returns this for chaining */
   set(key: K, value: V): this
-  /** map.get(key) → value | undefined */
   get(key: K): V | undefined
-  /** map.has(key) → boolean */
   has(key: K): boolean
-  /** map.delete(key) → boolean */
   delete(key: K): boolean
-  /** map.clear() */
   clear(): void
-  /** map.size (getter) */
   get size(): number
-  /** map.keys() → K[] */
   keys(): K[]
-  /** map.values() → V[] */
   values(): V[]
-  /** map.entries() → [K, V][] */
   entries(): [K, V][]
-  /**
-   * map.forEach(callback)
-   *
-   * Live iteration: releases the lock before each callback invocation so that
-   * the callback can safely mutate the same map. Uses positional index (IndexMap)
-   * to advance the cursor, consistent with the JS Map.forEach spec for additions
-   * and deletions that happen after the current key.
-   */
   forEach(callback: (value: V, key: K) => unknown): void
 }
 
 export declare class OffHeapSet<T extends Primitive = Primitive> {
   constructor()
-  /** set.add(value) → returns this for chaining (primitives only) */
   add(value: T): this
-  /** set.has(value) → boolean */
   has(value: T): boolean
-  /** set.delete(value) → boolean */
   delete(value: T): boolean
-  /** set.clear() */
   clear(): void
-  /** set.size (getter) */
   get size(): number
-  /** set.values() → T[] */
   values(): T[]
-  /**
-   * set.forEach(callback)
-   *
-   * callback receives (value, value) per the JS Set.forEach spec.
-   */
+  /** callback receives (value, value) per the JS Set.forEach spec */
   forEach(callback: (value: T, _value: T) => unknown): void
 }

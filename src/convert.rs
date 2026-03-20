@@ -74,6 +74,26 @@ pub(crate) fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> 
   }
 }
 
+// Number keys are coerced to strings matching JS object semantics (e.g. 1 → "1", 1.5 → "1.5").
+pub(crate) fn js_to_object_key(val: Unknown<'_>) -> napi::Result<String> {
+  let v = val.value();
+  match val.get_type()? {
+    ValueType::String => Ok(unsafe { String::from_napi_value(v.env, v.value)? }),
+    ValueType::Number => {
+      let n = unsafe { f64::from_napi_value(v.env, v.value)? };
+      if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+        Ok(format!("{}", n as i64))
+      } else {
+        Ok(format!("{}", n))
+      }
+    }
+    _ => Err(napi::Error::new(
+      napi::Status::InvalidArg,
+      "OffHeapObject key must be a string or number",
+    )),
+  }
+}
+
 // All helpers below accept raw `sys::napi_env` instead of `&Env` so that the
 // returned values are not tied to a local borrow — `#[napi]` methods receive
 // `Env` by value, so borrowing it would prevent returning the value.

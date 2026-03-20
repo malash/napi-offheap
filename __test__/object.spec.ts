@@ -150,3 +150,59 @@ test('OffHeapObject: keys/values/entries on empty object return empty arrays', (
   t.deepEqual(obj.values(), [])
   t.deepEqual(obj.entries(), [])
 })
+
+test('OffHeapObject: integer number key set/get roundtrip', (t) => {
+  const obj = new OffHeapObject()
+  obj.set(1, 'one').set(2, 'two')
+  t.is(obj.get(1), 'one')
+  t.is(obj.get(2), 'two')
+})
+
+test('OffHeapObject: float number key set/get roundtrip', (t) => {
+  const obj = new OffHeapObject()
+  obj.set(1.5, 'half')
+  t.is(obj.get(1.5), 'half')
+})
+
+test('OffHeapObject: number key and string key "1" are the same key', (t) => {
+  const obj = new OffHeapObject()
+  obj.set(1, 'number-key')
+  obj.set('1', 'string-key')
+  t.is(obj.get(1), 'string-key')
+  t.is(obj.get('1'), 'string-key')
+  t.is(obj.size, 1)
+})
+
+test('OffHeapObject: has/delete with number key', (t) => {
+  const obj = new OffHeapObject()
+  obj.set(42, 'value')
+  t.true(obj.has(42))
+  t.true(obj.delete(42))
+  t.false(obj.has(42))
+})
+
+test('OffHeapObject: keys() returns number keys coerced to strings', (t) => {
+  const obj = new OffHeapObject()
+  obj.set(1, 'a').set('b', 2).set(3, 'c')
+  t.deepEqual(obj.keys(), ['1', 'b', '3'])
+})
+
+test('OffHeapObject: entries() number keys are coerced to strings', (t) => {
+  const obj = new OffHeapObject()
+  obj.set('a', 1).set(2, 'b')
+  t.deepEqual(obj.entries(), [
+    ['a', 1],
+    ['2', 'b'],
+  ])
+})
+
+test('OffHeapObject: forEach number keys are coerced to strings', (t) => {
+  const obj = new OffHeapObject()
+  obj.set(10, 'x').set(20, 'y')
+  const result: [string, unknown][] = []
+  obj.forEach((value, key) => result.push([key, value]))
+  t.deepEqual(result, [
+    ['10', 'x'],
+    ['20', 'y'],
+  ])
+})

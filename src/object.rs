@@ -4,7 +4,7 @@ use napi::Env;
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 
-use crate::convert::{js_to_persistent, lock_err, to_unknown, val_to_unknown};
+use crate::convert::{js_to_object_key, js_to_persistent, lock_err, to_unknown, val_to_unknown};
 use crate::types::OffHeapObject;
 
 #[napi]
@@ -21,32 +21,36 @@ impl OffHeapObject {
     &self,
     this: This<'a>,
     env: Env,
-    key: String,
+    key: Unknown<'_>,
     value: Unknown<'_>,
   ) -> napi::Result<Object<'a>> {
+    let k = js_to_object_key(key)?;
     let v = js_to_persistent(&env, value)?;
-    self.inner.lock().map_err(lock_err)?.insert(key, v);
+    self.inner.lock().map_err(lock_err)?.insert(k, v);
     Ok(this.object)
   }
 
   #[napi]
-  pub fn get(&self, env: Env, key: String) -> napi::Result<Unknown<'static>> {
+  pub fn get(&self, env: Env, key: Unknown<'_>) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
+    let k = js_to_object_key(key)?;
     let guard = self.inner.lock().map_err(lock_err)?;
-    match guard.get(&key) {
+    match guard.get(&k) {
       None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
       Some(v) => val_to_unknown(raw_env, v),
     }
   }
 
   #[napi]
-  pub fn has(&self, key: String) -> napi::Result<bool> {
-    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&key))
+  pub fn has(&self, key: Unknown<'_>) -> napi::Result<bool> {
+    let k = js_to_object_key(key)?;
+    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&k))
   }
 
   #[napi]
-  pub fn delete(&self, key: String) -> napi::Result<bool> {
-    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&key).is_some())
+  pub fn delete(&self, key: Unknown<'_>) -> napi::Result<bool> {
+    let k = js_to_object_key(key)?;
+    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&k).is_some())
   }
 
   #[napi]

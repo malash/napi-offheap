@@ -49,6 +49,14 @@ test('error: OffHeapMap rejected in OffHeapSet.add', (t) => {
   t.throws(() => set.add(inner as any), { message: /value must be a primitive/ })
 })
 
+// ─── OffHeapObject invalid key type ──────────────────────────────────────────
+
+test('error: OffHeapObject.set rejects non-string/number key', (t) => {
+  const obj = new OffHeapObject()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t.throws(() => obj.set(true as any, 1), { message: /OffHeapObject key must be a string or number/ })
+})
+
 // ─── Out-of-bounds ───────────────────────────────────────────────────────────
 
 test('error: OffHeapArray.set throws on out-of-bounds with message', (t) => {
