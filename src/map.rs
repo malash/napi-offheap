@@ -18,7 +18,7 @@ impl OffHeapMap {
   }
 
   /// map.set(key, value) → returns this for chaining
-  #[napi(ts_return_type = "this")]
+  #[napi]
   pub fn set<'a>(
     &self,
     this: This<'a>,
@@ -91,7 +91,7 @@ impl OffHeapMap {
   }
 
   /// map.entries() → [K, V][]
-  #[napi(ts_return_type = "[unknown, unknown][]")]
+  #[napi]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
     let guard = self.inner.lock().map_err(lock_err)?;

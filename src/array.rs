@@ -17,7 +17,7 @@ impl OffHeapArray {
   }
 
   /// arr.push(value) → returns this for chaining
-  #[napi(ts_return_type = "this")]
+  #[napi]
   pub fn push<'a>(
     &self,
     this: This<'a>,

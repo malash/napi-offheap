@@ -115,6 +115,7 @@ dist
 
 
 .claude/settings.local.json
+_generated.d.ts
 
 #Added by cargo
 

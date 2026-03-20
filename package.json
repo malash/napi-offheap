@@ -1,11 +1,11 @@
 {
   "name": "napi-offheap",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Template project for writing node package with napi-rs",
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/napi-rs/package-template.git"
+    "url": "git+ssh://git@github.com:malash/napi-offheap.git"
   },
   "license": "MIT",
   "browser": "browser.js",
@@ -15,7 +15,8 @@
     "N-API",
     "Rust",
     "node-addon",
-    "node-addon-api"
+    "node-addon-api",
+    "offheap"
   ],
   "files": [
     "index.d.ts",
@@ -51,15 +52,16 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
+    "build": "napi build --platform --release --dts _generated.d.ts",
+    "build:debug": "napi build --platform --dts _generated.d.ts",
     "format": "run-p format:prettier format:rs format:toml",
     "format:prettier": "prettier . -w",
     "format:toml": "taplo format",
     "format:rs": "cargo fmt",
     "lint": "oxlint .",
     "prepublishOnly": "napi prepublish -t npm",
-    "test": "ava",
+    "typecheck": "tsc --noEmit",
+    "test": "yarn typecheck && ava",
     "preversion": "napi build --platform && git add .",
     "version": "napi version",
     "prepare": "husky"

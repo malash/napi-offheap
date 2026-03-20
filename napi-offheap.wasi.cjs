@@ -108,7 +108,7 @@ const { instance: __napiInstance, module: __wasiModule, napiModule: __napiModule
   },
 })
 module.exports = __napiModule.exports
-module.exports.OffHeapObject = __napiModule.exports.OffHeapObject
 module.exports.OffHeapArray = __napiModule.exports.OffHeapArray
 module.exports.OffHeapMap = __napiModule.exports.OffHeapMap
+module.exports.OffHeapObject = __napiModule.exports.OffHeapObject
 module.exports.OffHeapSet = __napiModule.exports.OffHeapSet

@@ -18,7 +18,7 @@ impl OffHeapSet {
   }
 
   /// set.add(value) → returns this for chaining  (primitives only)
-  #[napi(ts_return_type = "this")]
+  #[napi]
   pub fn add<'a>(
     &self,
     this: This<'a>,

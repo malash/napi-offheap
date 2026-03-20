@@ -56,7 +56,7 @@ const {
   },
 })
 export default __napiModule.exports
-export const OffHeapObject = __napiModule.exports.OffHeapObject
 export const OffHeapArray = __napiModule.exports.OffHeapArray
 export const OffHeapMap = __napiModule.exports.OffHeapMap
+export const OffHeapObject = __napiModule.exports.OffHeapObject
 export const OffHeapSet = __napiModule.exports.OffHeapSet
