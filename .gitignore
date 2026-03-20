@@ -114,6 +114,8 @@ dist
 # End of https://www.toptal.com/developers/gitignore/api/node
 
 
+.claude/
+
 #Added by cargo
 
 /target
