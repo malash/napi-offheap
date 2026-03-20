@@ -138,7 +138,7 @@ pub(crate) fn primitive_to_napi(
       PrimitiveValue::Bool(b) => bool::to_napi_value(raw_env, *b),
       PrimitiveValue::Int(i) => i64::to_napi_value(raw_env, *i),
       PrimitiveValue::Float(f) => f64::to_napi_value(raw_env, f.0),
-      PrimitiveValue::Str(s) => String::to_napi_value(raw_env, s.to_string()),
+      PrimitiveValue::Str(s) => <&str>::to_napi_value(raw_env, s.as_ref()),
     }
   }
 }
