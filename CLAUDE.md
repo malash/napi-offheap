@@ -32,6 +32,7 @@ napi        = "3.0.0"
 napi-derive = "3.0.0"
 indexmap    = "2"
 ordered-float = "4"
+parking_lot = "0.12"
 
 [build-dependencies]
 napi-build = "2"
@@ -78,6 +79,7 @@ pub enum OffHeapValue {
 
 pub type SharedMap    = IndexMap<PrimitiveValue, OffHeapValue>;
 pub type SharedArray  = Vec<OffHeapValue>;
+// Set elements are limited to PrimitiveValue: object identity has no stable hash.
 pub type SharedSet    = IndexSet<PrimitiveValue>;
 // String keys only — number keys are coerced to strings on write, matching JS object semantics.
 pub type SharedObject = IndexMap<String, OffHeapValue>;
@@ -89,7 +91,7 @@ pub type SharedObject = IndexMap<String, OffHeapValue>;
 
 - `Arc`：多个 JS 壳可共享同一份数据
 - `Mutex`：`#[napi]` 方法接收 `&self`，需要内部可变性
-- 当前单线程 Node.js 场景下 Mutex 无竞争开销
+- 使用 `parking_lot::Mutex`：不会发生 lock poisoning（与 `std::sync::Mutex` 不同），`lock()` 直接返回 guard，无需 `.unwrap()` 或错误处理
 
 ### 3.3 napi class 壳
 
@@ -116,6 +118,8 @@ pub struct OffHeapSet {
 ```
 
 字段均为 `pub(crate)`：crate 内跨模块可访问，JS 端无法直接访问。
+
+`Mutex` 来自 `parking_lot`（`use parking_lot::Mutex`），不是 `std::sync::Mutex`。
 
 ---
 
@@ -162,7 +166,7 @@ unsafe { <()>::to_napi_value(raw_env, ()) }          // undefined
 unsafe { bool::to_napi_value(raw_env, b) }
 unsafe { i64::to_napi_value(raw_env, i) }
 unsafe { f64::to_napi_value(raw_env, f) }
-unsafe { String::to_napi_value(raw_env, s.to_string()) }
+unsafe { <&str>::to_napi_value(raw_env, s.as_ref()) }  // 用 &str，避免 String 分配
 unsafe { u32::to_napi_value(raw_env, n) }
 ```
 
@@ -174,11 +178,12 @@ unsafe { u32::to_napi_value(raw_env, n) }
 
 **解法**：所有辅助函数改为接受 `raw_env: sys::napi_env`（裸指针，`Copy`，无生命周期），返回 `sys::napi_value` 或 `Unknown<'static>`。`#[napi]` 方法的返回类型也用 `Unknown<'static>`。
 
-构造 `Unknown<'static>`：
+构造 `Unknown<'static>`（`to_unknown` 是普通函数，unsafe 在内部）：
 
 ```rust
-unsafe fn to_unknown(raw_env: sys::napi_env, raw_val: sys::napi_value) -> Unknown<'static> {
-  Unknown::from_raw_unchecked(raw_env, raw_val)
+#[inline]
+pub(crate) fn to_unknown(raw_env: sys::napi_env, raw_val: sys::napi_value) -> Unknown<'static> {
+  unsafe { Unknown::from_raw_unchecked(raw_env, raw_val) }
 }
 ```
 
@@ -246,7 +251,7 @@ pub fn set<'a>(
 
 **关键**：必须给方法加显式生命周期 `<'a>`，并让 `This<'a>` 和返回的 `Object<'a>` 使用同一生命周期。不加 `<'a>` 会导致编译器推断出两个不同生命周期，报错"返回值的生命周期与参数不匹配"。
 
-本项目 `index.d.ts` 手动维护，Rust 侧无需加 `#[napi(ts_return_type = "this")]`，直接用 `#[napi]` 即可。
+本项目 `entry.d.ts` 手动维护，Rust 侧无需加 `#[napi(ts_return_type = "this")]`，直接用 `#[napi]` 即可。
 
 ### 4.10 Function 类型 — 对应 napi 2 的 JsFunction
 
@@ -283,24 +288,14 @@ let arr = Array::from_vec(&env_obj, vec![js_val1, js_val2])?;
 
 以下函数均为 crate 内部（`pub(crate)`），定义在 `src/convert.rs`。
 
-### 5.1 lock_err — 统一锁错误转换
+### 5.1 js_to_persistent — JS 值 → OffHeapValue
 
-```rust
-pub(crate) fn lock_err(e: impl std::fmt::Display) -> napi::Error {
-  napi::Error::new(
-    napi::Status::GenericFailure,
-    format!("lock poisoned: {e}"),
-  )
-}
-```
-
-所有 `self.inner.lock()` 均用 `.map_err(lock_err)?` 处理。
-
-### 5.2 js_to_persistent — JS 值 → OffHeapValue
+先缓存 `get_type()` 结果以避免重复调用，再调用内部函数 `js_to_primitive_ty`。
 
 ```rust
 pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
-  if val.get_type()? == ValueType::Object {
+  let ty = val.get_type()?;
+  if ty == ValueType::Object {
     let raw_env = env.raw();
     let raw_val = val.value().value;
 
@@ -330,56 +325,71 @@ pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffH
       "plain JS objects are not accepted; wrap with OffHeapMap/Array/Set/Object",
     ));
   }
-  Ok(OffHeapValue::Primitive(js_to_primitive(val)?))
+  Ok(OffHeapValue::Primitive(js_to_primitive_ty(ty, val)?))
 }
 ```
 
-- 先判断 `ValueType::Object`，再逐一 instanceof 检查，最后拒绝普通对象。
-- 非 Object 类型走 `js_to_primitive`。
+- 先缓存类型，再逐一 instanceof 检查，最后拒绝普通对象。
+- 非 Object 类型走 `js_to_primitive_ty`（内部函数，避免重复调用 `get_type()`）。
 
-### 5.3 js_to_primitive — JS 原始值 → PrimitiveValue
+### 5.2 js_to_primitive — JS 原始值 → PrimitiveValue
+
+公开的薄包装，内部委托给 `js_to_primitive_ty`：
 
 ```rust
 pub(crate) fn js_to_primitive(val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
-  let v = val.value();
-  match val.get_type()? {
+  js_to_primitive_ty(val.get_type()?, val)
+}
+
+fn js_to_primitive_ty(ty: ValueType, val: Unknown<'_>) -> napi::Result<PrimitiveValue> {
+  match ty {
     ValueType::Null      => Ok(PrimitiveValue::Null),
     ValueType::Undefined => Ok(PrimitiveValue::Undefined),
-    ValueType::Boolean   => {
-      let b = unsafe { bool::from_napi_value(v.env, v.value)? };
-      Ok(PrimitiveValue::Bool(b))
-    }
-    ValueType::Number => {
-      let n = unsafe { f64::from_napi_value(v.env, v.value)? };
+    ValueType::Boolean   => Ok(PrimitiveValue::Bool(bool_from_unknown(val)?)),
+    ValueType::Number    => {
+      let n = f64_from_unknown(val)?;
       if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
         Ok(PrimitiveValue::Int(n as i64))
       } else {
         Ok(PrimitiveValue::Float(OrderedFloat(n)))
       }
     }
-    ValueType::String => {
-      let s = unsafe { String::from_napi_value(v.env, v.value)? };
-      Ok(PrimitiveValue::Str(Arc::from(s.as_str())))
-    }
+    ValueType::String => Ok(PrimitiveValue::Str(Arc::from(
+      string_from_unknown(val)?.as_str(),
+    ))),
     _ => Err(napi::Error::new(
       napi::Status::InvalidArg,
       "value must be a primitive or an OffHeap type",
     )),
   }
 }
+
+// Safe wrappers around `from_napi_value`. The pointers in `val.value()` are
+// guaranteed valid for the lifetime of `val`, so the extraction is safe.
+fn bool_from_unknown(val: Unknown<'_>) -> napi::Result<bool> {
+  let v = val.value();
+  unsafe { bool::from_napi_value(v.env, v.value) }
+}
+
+fn f64_from_unknown(val: Unknown<'_>) -> napi::Result<f64> {
+  let v = val.value();
+  unsafe { f64::from_napi_value(v.env, v.value) }
+}
+
+fn string_from_unknown(val: Unknown<'_>) -> napi::Result<String> {
+  let v = val.value();
+  unsafe { String::from_napi_value(v.env, v.value) }
+}
 ```
 
-此函数**不接受 `env: &Env` 参数**，直接从 `val.value()` 取得裸指针。
-
-### 5.4 js_to_object_key — JS string/number → String（OffHeapObject 专用）
+### 5.3 js_to_object_key — JS string/number → String（OffHeapObject 专用）
 
 ```rust
 pub(crate) fn js_to_object_key(val: Unknown<'_>) -> napi::Result<String> {
-  let v = val.value();
   match val.get_type()? {
-    ValueType::String => Ok(unsafe { String::from_napi_value(v.env, v.value)? }),
+    ValueType::String => string_from_unknown(val),
     ValueType::Number => {
-      let n = unsafe { f64::from_napi_value(v.env, v.value)? };
+      let n = f64_from_unknown(val)?;
       if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
         Ok(format!("{}", n as i64))
       } else {
@@ -396,42 +406,39 @@ pub(crate) fn js_to_object_key(val: Unknown<'_>) -> napi::Result<String> {
 
 匹配 JS 对象语义：number key 自动 coerce 为 string（`1` → `"1"`，`1.5` → `"1.5"`），其余类型报错。
 
-### 5.5 to_napi_value_inner — OffHeapValue → sys::napi_value
+### 5.4 to_napi_value_inner — OffHeapValue → sys::napi_value
 
 ```rust
 pub(crate) fn to_napi_value_inner(
   raw_env: sys::napi_env,
   val: &OffHeapValue,
 ) -> napi::Result<sys::napi_value> {
-  match val {
-    OffHeapValue::Primitive(p) => primitive_to_napi(raw_env, p),
+  if let OffHeapValue::Primitive(p) = val {
+    return primitive_to_napi(raw_env, p);
+  }
+  let env = Env::from_raw(raw_env);
+  let instance_value = match val {
+    OffHeapValue::Primitive(_) => unreachable!(),
     OffHeapValue::Map(arc) => {
-      let env = Env::from_raw(raw_env);
-      let instance = OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?;
-      Ok(instance.value)
+      OffHeapMap { inner: Arc::clone(arc) }.into_instance(&env)?.value
     }
     OffHeapValue::Array(arc) => {
-      let env = Env::from_raw(raw_env);
-      let instance = OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?;
-      Ok(instance.value)
+      OffHeapArray { inner: Arc::clone(arc) }.into_instance(&env)?.value
     }
     OffHeapValue::Set(arc) => {
-      let env = Env::from_raw(raw_env);
-      let instance = OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?;
-      Ok(instance.value)
+      OffHeapSet { inner: Arc::clone(arc) }.into_instance(&env)?.value
     }
     OffHeapValue::Object(arc) => {
-      let env = Env::from_raw(raw_env);
-      let instance = OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?;
-      Ok(instance.value)
+      OffHeapObject { inner: Arc::clone(arc) }.into_instance(&env)?.value
     }
-  }
+  };
+  Ok(instance_value)
 }
 ```
 
 容器类型：`Arc::clone` 后用 `.into_instance(&env)?` 创建新 JS 壳，共享同一份 Rust 数据。
 
-### 5.6 primitive_to_napi — PrimitiveValue → sys::napi_value
+### 5.5 primitive_to_napi — PrimitiveValue → sys::napi_value
 
 ```rust
 pub(crate) fn primitive_to_napi(
@@ -445,47 +452,67 @@ pub(crate) fn primitive_to_napi(
       PrimitiveValue::Bool(b)   => bool::to_napi_value(raw_env, *b),
       PrimitiveValue::Int(i)    => i64::to_napi_value(raw_env, *i),
       PrimitiveValue::Float(f)  => f64::to_napi_value(raw_env, f.0),
-      PrimitiveValue::Str(s)    => String::to_napi_value(raw_env, s.to_string()),
+      PrimitiveValue::Str(s)    => <&str>::to_napi_value(raw_env, s.as_ref()),
     }
   }
 }
 ```
 
-### 5.7 to_unknown — 裸指针 → Unknown<'static>
+注意 `Str` 使用 `<&str>::to_napi_value`（不是 `String::to_napi_value`），避免额外的字符串分配。
+
+### 5.6 to_unknown — 裸指针 → Unknown<'static>
+
+普通函数（不是 `unsafe fn`），unsafe 封装在内部：
 
 ```rust
 #[inline]
-pub(crate) unsafe fn to_unknown(
-  raw_env: sys::napi_env,
-  raw_val: sys::napi_value,
-) -> Unknown<'static> {
-  Unknown::from_raw_unchecked(raw_env, raw_val)
+pub(crate) fn to_unknown(raw_env: sys::napi_env, raw_val: sys::napi_value) -> Unknown<'static> {
+  unsafe { Unknown::from_raw_unchecked(raw_env, raw_val) }
 }
 ```
 
-### 5.8 val_to_unknown / prim_to_unknown — 组合辅助
+### 5.7 val_to_unknown / prim_to_unknown / undefined_to_unknown / str_to_unknown / array_to_unknown — 组合辅助
 
 ```rust
 pub(crate) fn val_to_unknown(
   raw_env: sys::napi_env,
   val: &OffHeapValue,
 ) -> napi::Result<Unknown<'static>> {
-  let raw = to_napi_value_inner(raw_env, val)?;
-  Ok(unsafe { to_unknown(raw_env, raw) })
+  Ok(to_unknown(raw_env, to_napi_value_inner(raw_env, val)?))
 }
 
 pub(crate) fn prim_to_unknown(
   raw_env: sys::napi_env,
   val: &PrimitiveValue,
 ) -> napi::Result<Unknown<'static>> {
-  let raw = primitive_to_napi(raw_env, val)?;
-  Ok(unsafe { to_unknown(raw_env, raw) })
+  Ok(to_unknown(raw_env, primitive_to_napi(raw_env, val)?))
+}
+
+pub(crate) fn undefined_to_unknown(raw_env: sys::napi_env) -> napi::Result<Unknown<'static>> {
+  prim_to_unknown(raw_env, &PrimitiveValue::Undefined)
+}
+
+pub(crate) fn str_to_unknown(raw_env: sys::napi_env, s: &str) -> napi::Result<Unknown<'static>> {
+  let raw = unsafe { <&str>::to_napi_value(raw_env, s)? };
+  Ok(to_unknown(raw_env, raw))
+}
+
+pub(crate) fn array_to_unknown(raw_env: sys::napi_env, arr: Array) -> Unknown<'static> {
+  to_unknown(raw_env, arr.raw())
 }
 ```
+
+`undefined_to_unknown` 供 `get`/`pop`/`get(index)` 在未找到时返回 undefined。`str_to_unknown` 供 `OffHeapObject` 把 String key 转为 Unknown。`array_to_unknown` 供 `entries()` 包装 `[key, value]` 数组。
 
 ---
 
 ## 6. OffHeapMap 完整实现
+
+`parking_lot::Mutex::lock()` 不会失败，直接返回 guard，无需 `.map_err(...)?`。
+
+`keys()`、`values()`、`entries()` 先将数据 clone 到 Vec，释放锁后再转换，避免在持锁状态下调用 napi 函数。
+
+`for_each` 在每次回调后重新定位 key 的位置，正确处理回调期间的删除操作。
 
 ```rust
 #[napi]
@@ -505,7 +532,7 @@ impl OffHeapMap {
   ) -> napi::Result<Object<'a>> {
     let k = js_to_primitive(key)?;
     let v = js_to_persistent(&env, value)?;
-    self.inner.lock().map_err(lock_err)?.insert(k, v);
+    self.inner.lock().insert(k, v);
     Ok(this.object)
   }
 
@@ -513,67 +540,74 @@ impl OffHeapMap {
   pub fn get(&self, env: Env, key: Unknown<'_>) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
     let k = js_to_primitive(key)?;
-    let guard = self.inner.lock().map_err(lock_err)?;
-    match guard.get(&k) {
-      None    => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
-      Some(v) => val_to_unknown(raw_env, v),
+    let val = self.inner.lock().get(&k).cloned();
+    match val {
+      None    => undefined_to_unknown(raw_env),
+      Some(v) => val_to_unknown(raw_env, &v),
     }
   }
 
   #[napi]
   pub fn has(&self, key: Unknown<'_>) -> napi::Result<bool> {
     let k = js_to_primitive(key)?;
-    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&k))
+    Ok(self.inner.lock().contains_key(&k))
   }
 
   #[napi]
   pub fn delete(&self, key: Unknown<'_>) -> napi::Result<bool> {
     let k = js_to_primitive(key)?;
-    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&k).is_some())
+    Ok(self.inner.lock().shift_remove(&k).is_some())
   }
 
   #[napi]
   pub fn clear(&self) -> napi::Result<()> {
-    self.inner.lock().map_err(lock_err)?.clear();
+    self.inner.lock().clear();
     Ok(())
   }
 
   #[napi(getter)]
   pub fn size(&self) -> napi::Result<u32> {
-    Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
+    Ok(self.inner.lock().len() as u32)
   }
 
   #[napi]
   pub fn keys(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard.keys().map(|k| prim_to_unknown(raw_env, k)).collect()
+    let keys: Vec<PrimitiveValue> = self.inner.lock().keys().cloned().collect();
+    keys.iter().map(|k| prim_to_unknown(raw_env, k)).collect()
   }
 
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard.values().map(|v| val_to_unknown(raw_env, v)).collect()
+    let values: Vec<OffHeapValue> = self.inner.lock().values().cloned().collect();
+    values.iter().map(|v| val_to_unknown(raw_env, v)).collect()
   }
 
   #[napi]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard
+    let entries: Vec<(PrimitiveValue, OffHeapValue)> = self
+      .inner
+      .lock()
+      .iter()
+      .map(|(k, v)| (k.clone(), v.clone()))
+      .collect();
+    entries
       .iter()
       .map(|(k, v)| {
-        let js_key  = prim_to_unknown(raw_env, k)?;
-        let js_val  = val_to_unknown(raw_env, v)?;
+        let js_key = prim_to_unknown(raw_env, k)?;
+        let js_val = val_to_unknown(raw_env, v)?;
         let env_obj = Env::from_raw(raw_env);
-        let arr     = Array::from_vec(&env_obj, vec![js_key, js_val])?;
-        Ok(unsafe { to_unknown(raw_env, arr.raw()) })
+        let arr = Array::from_vec(&env_obj, vec![js_key, js_val])?;
+        Ok(array_to_unknown(raw_env, arr))
       })
       .collect()
   }
 
   // Lock is released before each callback so the callback can mutate the map without deadlock.
+  // After each callback the key is re-located: if it was deleted the cursor stays in place
+  // (the next element shifted left); otherwise the cursor advances past it.
   #[napi]
   pub fn for_each(
     &self,
@@ -581,11 +615,11 @@ impl OffHeapMap {
     callback: Function<'_, FnArgs<(Unknown<'static>, Unknown<'static>)>, Unknown<'static>>,
   ) -> napi::Result<()> {
     let raw_env = env.raw();
-    let mut index = 0usize;
+    let mut next_index = 0usize;
     loop {
       let entry = {
-        let guard = self.inner.lock().map_err(lock_err)?;
-        guard.get_index(index).map(|(k, v)| (k.clone(), v.clone()))
+        let guard = self.inner.lock();
+        guard.get_index(next_index).map(|(k, v)| (k.clone(), v.clone()))
       };
       match entry {
         None => break,
@@ -593,7 +627,13 @@ impl OffHeapMap {
           let js_val = val_to_unknown(raw_env, &val)?;
           let js_key = prim_to_unknown(raw_env, &key)?;
           callback.call(FnArgs { data: (js_val, js_key) })?;
-          index += 1;
+          // Re-locate the key: if it was deleted the slot is now occupied by the
+          // element that shifted left, so next_index stays; otherwise advance past it.
+          next_index = self
+            .inner
+            .lock()
+            .get_index_of(&key)
+            .map_or(next_index, |pos| pos + 1);
         }
       }
     }
@@ -606,6 +646,10 @@ impl OffHeapMap {
 
 ## 7. OffHeapArray 完整实现
 
+`splice` 使用 `Vec::splice` 原地替换，比 drain + insert 更高效。
+
+`for_each` 在迭代开始前捕获 `initial_length`，与 JS `Array.prototype.forEach` 一致——不访问迭代开始后新增的元素。
+
 ```rust
 #[napi]
 impl OffHeapArray {
@@ -615,23 +659,18 @@ impl OffHeapArray {
   }
 
   #[napi]
-  pub fn push<'a>(
-    &self,
-    this: This<'a>,
-    env: Env,
-    value: Unknown<'_>,
-  ) -> napi::Result<Object<'a>> {
+  pub fn push<'a>(&self, this: This<'a>, env: Env, value: Unknown<'_>) -> napi::Result<Object<'a>> {
     let v = js_to_persistent(&env, value)?;
-    self.inner.lock().map_err(lock_err)?.push(v);
+    self.inner.lock().push(v);
     Ok(this.object)
   }
 
   #[napi]
   pub fn pop(&self, env: Env) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
-    let mut guard = self.inner.lock().map_err(lock_err)?;
-    match guard.pop() {
-      None    => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
+    let val = self.inner.lock().pop();
+    match val {
+      None    => undefined_to_unknown(raw_env),
       Some(v) => val_to_unknown(raw_env, &v),
     }
   }
@@ -639,31 +678,30 @@ impl OffHeapArray {
   #[napi]
   pub fn get(&self, env: Env, index: u32) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    match guard.get(index as usize) {
-      None    => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
-      Some(v) => val_to_unknown(raw_env, v),
+    let val = self.inner.lock().get(index as usize).cloned();
+    match val {
+      None    => undefined_to_unknown(raw_env),
+      Some(v) => val_to_unknown(raw_env, &v),
     }
   }
 
   #[napi]
   pub fn set(&self, env: Env, index: u32, value: Unknown<'_>) -> napi::Result<()> {
-    let v = js_to_persistent(&env, value)?;
-    let mut guard = self.inner.lock().map_err(lock_err)?;
     let idx = index as usize;
+    let mut guard = self.inner.lock();
     if idx >= guard.len() {
       return Err(napi::Error::new(
         napi::Status::GenericFailure,
         format!("index {} out of bounds (length {})", idx, guard.len()),
       ));
     }
-    guard[idx] = v;
+    guard[idx] = js_to_persistent(&env, value)?;
     Ok(())
   }
 
   #[napi(getter)]
   pub fn length(&self) -> napi::Result<u32> {
-    Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
+    Ok(self.inner.lock().len() as u32)
   }
 
   // Items are converted before the lock is acquired to avoid holding the lock across JS calls.
@@ -681,21 +719,20 @@ impl OffHeapArray {
       .map(|v| js_to_persistent(&env, v))
       .collect::<napi::Result<_>>()?;
 
-    let mut guard = self.inner.lock().map_err(lock_err)?;
+    let mut guard = self.inner.lock();
     let len   = guard.len();
     let start = (start as usize).min(len);
     let end   = (start + delete_count as usize).min(len);
 
-    let removed: Vec<OffHeapValue> = guard.drain(start..end).collect();
-    for (offset, item) in new_items.into_iter().enumerate() {
-      guard.insert(start + offset, item);
-    }
+    let removed: Vec<OffHeapValue> = guard.splice(start..end, new_items).collect();
     drop(guard);
 
     removed.iter().map(|v| val_to_unknown(raw_env, v)).collect()
   }
 
   // Lock is released before each callback so the callback can mutate the array without deadlock.
+  // Captures initial_length upfront: matches JS Array.prototype.forEach which does not
+  // visit elements pushed after the iteration starts.
   #[napi]
   pub fn for_each(
     &self,
@@ -703,20 +740,14 @@ impl OffHeapArray {
     callback: Function<'_, FnArgs<(Unknown<'static>, Unknown<'static>)>, Unknown<'static>>,
   ) -> napi::Result<()> {
     let raw_env = env.raw();
-    let mut index = 0usize;
-    loop {
-      let entry = {
-        let guard = self.inner.lock().map_err(lock_err)?;
-        guard.get(index).cloned()
-      };
-      match entry {
-        None => break,
-        Some(val) => {
-          let js_val = val_to_unknown(raw_env, &val)?;
-          let js_idx = unsafe { to_unknown(raw_env, u32::to_napi_value(raw_env, index as u32)?) };
-          callback.call(FnArgs { data: (js_val, js_idx) })?;
-          index += 1;
-        }
+    let initial_length = self.inner.lock().len();
+    for index in 0..initial_length {
+      let val = self.inner.lock().get(index).cloned();
+      if let Some(val) = val {
+        let js_val = val_to_unknown(raw_env, &val)?;
+        let idx_u32 = u32::try_from(index).unwrap_or(u32::MAX);
+        let js_idx = prim_to_unknown(raw_env, &PrimitiveValue::Int(idx_u32 as i64))?;
+        callback.call(FnArgs { data: (js_val, js_idx) })?;
       }
     }
     Ok(())
@@ -727,6 +758,8 @@ impl OffHeapArray {
 ---
 
 ## 8. OffHeapSet 完整实现
+
+`for_each` 与 `OffHeapMap` 同样使用重新定位光标的方式，正确处理回调期间的删除操作。
 
 ```rust
 #[napi]
@@ -743,38 +776,38 @@ impl OffHeapSet {
     value: Unknown<'_>,
   ) -> napi::Result<Object<'a>> {
     let primitive = js_to_primitive(value)?;
-    self.inner.lock().map_err(lock_err)?.insert(primitive);
+    self.inner.lock().insert(primitive);
     Ok(this.object)
   }
 
   #[napi]
   pub fn has(&self, value: Unknown<'_>) -> napi::Result<bool> {
     let primitive = js_to_primitive(value)?;
-    Ok(self.inner.lock().map_err(lock_err)?.contains(&primitive))
+    Ok(self.inner.lock().contains(&primitive))
   }
 
   #[napi]
   pub fn delete(&self, value: Unknown<'_>) -> napi::Result<bool> {
     let primitive = js_to_primitive(value)?;
-    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&primitive))
+    Ok(self.inner.lock().shift_remove(&primitive))
   }
 
   #[napi]
   pub fn clear(&self) -> napi::Result<()> {
-    self.inner.lock().map_err(lock_err)?.clear();
+    self.inner.lock().clear();
     Ok(())
   }
 
   #[napi(getter)]
   pub fn size(&self) -> napi::Result<u32> {
-    Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
+    Ok(self.inner.lock().len() as u32)
   }
 
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard.iter().map(|p| prim_to_unknown(raw_env, p)).collect()
+    let values: Vec<PrimitiveValue> = self.inner.lock().iter().cloned().collect();
+    values.iter().map(|p| prim_to_unknown(raw_env, p)).collect()
   }
 
   // Lock is released before each callback so the callback can mutate the set without deadlock.
@@ -785,19 +818,22 @@ impl OffHeapSet {
     callback: Function<'_, FnArgs<(Unknown<'static>, Unknown<'static>)>, Unknown<'static>>,
   ) -> napi::Result<()> {
     let raw_env = env.raw();
-    let mut index = 0usize;
+    let mut next_index = 0usize;
     loop {
       let entry = {
-        let guard = self.inner.lock().map_err(lock_err)?;
-        guard.get_index(index).cloned()
+        let guard = self.inner.lock();
+        guard.get_index(next_index).cloned()
       };
       match entry {
         None => break,
         Some(primitive) => {
-          let js_val1 = prim_to_unknown(raw_env, &primitive)?;
-          let js_val2 = prim_to_unknown(raw_env, &primitive)?;
-          callback.call(FnArgs { data: (js_val1, js_val2) })?;
-          index += 1;
+          let js_val = prim_to_unknown(raw_env, &primitive)?;
+          callback.call(FnArgs { data: (js_val, js_val) })?;
+          next_index = self
+            .inner
+            .lock()
+            .get_index_of(&primitive)
+            .map_or(next_index, |pos| pos + 1);
         }
       }
     }
@@ -818,6 +854,8 @@ impl OffHeapSet {
 
 所有接受 key 的方法参数类型均为 `Unknown<'_>`，通过 `js_to_object_key` 转换。
 
+`entries()` 和 `for_each()` 使用 `str_to_unknown` 将 String key 转为 Unknown，与 `OffHeapMap` 使用 `prim_to_unknown` 对称。
+
 ```rust
 #[napi]
 impl OffHeapObject {
@@ -836,7 +874,7 @@ impl OffHeapObject {
   ) -> napi::Result<Object<'a>> {
     let k = js_to_object_key(key)?;
     let v = js_to_persistent(&env, value)?;
-    self.inner.lock().map_err(lock_err)?.insert(k, v);
+    self.inner.lock().insert(k, v);
     Ok(this.object)
   }
 
@@ -844,61 +882,65 @@ impl OffHeapObject {
   pub fn get(&self, env: Env, key: Unknown<'_>) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
     let k = js_to_object_key(key)?;
-    let guard = self.inner.lock().map_err(lock_err)?;
-    match guard.get(&k) {
-      None    => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
-      Some(v) => val_to_unknown(raw_env, v),
+    let val = self.inner.lock().get(&k).cloned();
+    match val {
+      None    => undefined_to_unknown(raw_env),
+      Some(v) => val_to_unknown(raw_env, &v),
     }
   }
 
   #[napi]
   pub fn has(&self, key: Unknown<'_>) -> napi::Result<bool> {
     let k = js_to_object_key(key)?;
-    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&k))
+    Ok(self.inner.lock().contains_key(&k))
   }
 
   #[napi]
   pub fn delete(&self, key: Unknown<'_>) -> napi::Result<bool> {
     let k = js_to_object_key(key)?;
-    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&k).is_some())
+    Ok(self.inner.lock().shift_remove(&k).is_some())
   }
 
   #[napi]
   pub fn clear(&self) -> napi::Result<()> {
-    self.inner.lock().map_err(lock_err)?.clear();
+    self.inner.lock().clear();
     Ok(())
   }
 
   #[napi(getter)]
   pub fn size(&self) -> napi::Result<u32> {
-    Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
+    Ok(self.inner.lock().len() as u32)
   }
 
   #[napi]
   pub fn keys(&self) -> napi::Result<Vec<String>> {
-    Ok(self.inner.lock().map_err(lock_err)?.keys().cloned().collect())
+    Ok(self.inner.lock().keys().cloned().collect())
   }
 
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard.values().map(|v| val_to_unknown(raw_env, v)).collect()
+    let values: Vec<OffHeapValue> = self.inner.lock().values().cloned().collect();
+    values.iter().map(|v| val_to_unknown(raw_env, v)).collect()
   }
 
   #[napi]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    guard
+    let entries: Vec<(String, OffHeapValue)> = self
+      .inner
+      .lock()
+      .iter()
+      .map(|(k, v)| (k.clone(), v.clone()))
+      .collect();
+    entries
       .iter()
       .map(|(k, v)| {
-        let raw_key = unsafe { String::to_napi_value(raw_env, k.clone())? };
-        let js_key  = unsafe { to_unknown(raw_env, raw_key) };
-        let js_val  = val_to_unknown(raw_env, v)?;
+        let js_key = str_to_unknown(raw_env, k.as_str())?;
+        let js_val = val_to_unknown(raw_env, v)?;
         let env_obj = Env::from_raw(raw_env);
-        let arr     = Array::from_vec(&env_obj, vec![js_key, js_val])?;
-        Ok(unsafe { to_unknown(raw_env, arr.raw()) })
+        let arr = Array::from_vec(&env_obj, vec![js_key, js_val])?;
+        Ok(array_to_unknown(raw_env, arr))
       })
       .collect()
   }
@@ -911,19 +953,23 @@ impl OffHeapObject {
     callback: Function<'_, FnArgs<(Unknown<'static>, Unknown<'static>)>, Unknown<'static>>,
   ) -> napi::Result<()> {
     let raw_env = env.raw();
-    let mut index = 0usize;
+    let mut next_index = 0usize;
     loop {
       let entry = {
-        let guard = self.inner.lock().map_err(lock_err)?;
-        guard.get_index(index).map(|(k, v)| (k.clone(), v.clone()))
+        let guard = self.inner.lock();
+        guard.get_index(next_index).map(|(k, v)| (k.clone(), v.clone()))
       };
       match entry {
         None => break,
         Some((key, val)) => {
           let js_val = val_to_unknown(raw_env, &val)?;
-          let js_key = unsafe { to_unknown(raw_env, String::to_napi_value(raw_env, key)?) };
+          let js_key = str_to_unknown(raw_env, &key)?;
           callback.call(FnArgs { data: (js_val, js_key) })?;
-          index += 1;
+          next_index = self
+            .inner
+            .lock()
+            .get_index_of(&key)
+            .map_or(next_index, |pos| pos + 1);
         }
       }
     }
@@ -948,10 +994,12 @@ src/types.rs      — 所有类型定义
                     inner 字段为 pub(crate)
 
 src/convert.rs    — JS ↔ Rust 转换辅助函数（均为 pub(crate)）
-                    lock_err
-                    js_to_persistent / js_to_primitive / js_to_object_key
+                    js_to_persistent / js_to_primitive / js_to_primitive_ty（内部）
+                    bool_from_unknown / f64_from_unknown / string_from_unknown（内部）
+                    js_to_object_key
                     to_napi_value_inner / primitive_to_napi
-                    to_unknown（unsafe）/ val_to_unknown / prim_to_unknown
+                    to_unknown / val_to_unknown / prim_to_unknown
+                    undefined_to_unknown / str_to_unknown / array_to_unknown
 
 src/object.rs     — #[napi] impl OffHeapObject { ... }
 src/map.rs        — #[napi] impl OffHeapMap { ... }
@@ -962,8 +1010,8 @@ src/set.rs        — #[napi] impl OffHeapSet { ... }
 TypeScript 类型：
 
 ```
-index.d.ts        — 手动维护，含完整泛型类型（不会被 napi build 覆盖）
-_generated.d.ts   — napi build 自动生成，gitignored，不对外发布
+entry.d.ts        — 手动维护，含完整泛型类型（不会被 napi build 覆盖）
+_generated.d.ts   — napi build 自动生成，无泛型类型，不对外发布
 ```
 
 ---
@@ -977,7 +1025,6 @@ _generated.d.ts   — napi build 自动生成，gitignored，不对外发布
 | OffHeapSet.add 传入普通对象                               | `InvalidArg`     | Set 只接受基本类型       | `value must be a primitive or an OffHeap type`                             |
 | OffHeapObject.set/get/has/delete 传入非 string/number key | `InvalidArg`     | boolean、null、object 等 | `OffHeapObject key must be a string or number`                             |
 | OffHeapArray.set 越界                                     | `GenericFailure` | index >= length          | `index 5 out of bounds (length 3)`                                         |
-| 任意操作 Mutex 中毒                                       | `GenericFailure` | Rust panic 后            | `lock poisoned: ...`                                                       |
 
 ---
 
