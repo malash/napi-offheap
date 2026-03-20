@@ -50,16 +50,15 @@ impl OffHeapArray {
 
   #[napi]
   pub fn set(&self, env: Env, index: u32, value: Unknown<'_>) -> napi::Result<()> {
-    let v = js_to_persistent(&env, value)?;
-    let mut guard = self.inner.lock();
     let idx = index as usize;
+    let mut guard = self.inner.lock();
     if idx >= guard.len() {
       return Err(napi::Error::new(
         napi::Status::GenericFailure,
         format!("index {} out of bounds (length {})", idx, guard.len()),
       ));
     }
-    guard[idx] = v;
+    guard[idx] = js_to_persistent(&env, value)?;
     Ok(())
   }
 
