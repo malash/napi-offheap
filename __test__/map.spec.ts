@@ -1,6 +1,6 @@
 import test from 'ava'
 
-import { OffHeapMap } from '../index'
+import { OffHeapMap } from '../entry'
 
 test('OffHeapMap: constructor creates empty map', (t) => {
   const map = new OffHeapMap()
@@ -184,4 +184,25 @@ test('OffHeapMap: all primitive key types coexist', (t) => {
   t.is(map.get(true), 3)
   t.is(map.get(null), 4)
   t.is(map.get(undefined), 5)
+})
+
+test('OffHeapMap: [Symbol.iterator] yields [key, value] pairs in insertion order', (t) => {
+  const map = new OffHeapMap()
+  map.set('a', 1).set('b', 2).set('c', 3)
+  t.deepEqual([...map], [['a', 1], ['b', 2], ['c', 3]])
+})
+
+test('OffHeapMap: for...of destructuring works', (t) => {
+  const map = new OffHeapMap()
+  map.set('x', 10).set('y', 20)
+  const result: [unknown, unknown][] = []
+  for (const [k, v] of map) {
+    result.push([k, v])
+  }
+  t.deepEqual(result, [['x', 10], ['y', 20]])
+})
+
+test('OffHeapMap: [Symbol.iterator] on empty map yields nothing', (t) => {
+  const map = new OffHeapMap()
+  t.deepEqual([...map], [])
 })

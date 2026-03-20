@@ -8,8 +8,8 @@
  */
 import test from 'ava'
 
-import * as Module from '../index'
-import { OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet } from '../index'
+import * as Module from '../entry'
+import { OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet } from '../entry'
 
 // ─── Exports ─────────────────────────────────────────────────────────────────
 

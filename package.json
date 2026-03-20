@@ -2,7 +2,8 @@
   "name": "napi-offheap",
   "version": "0.0.1",
   "description": "Template project for writing node package with napi-rs",
-  "main": "index.js",
+  "main": "entry.js",
+  "types": "entry.d.ts",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com:malash/napi-offheap.git"
@@ -19,7 +20,8 @@
     "offheap"
   ],
   "files": [
-    "index.d.ts",
+    "entry.d.ts",
+    "entry.js",
     "index.js",
     "browser.js"
   ],

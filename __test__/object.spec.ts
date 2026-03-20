@@ -1,6 +1,6 @@
 import test from 'ava'
 
-import { OffHeapObject } from '../index'
+import { OffHeapObject } from '../entry'
 
 test('OffHeapObject: constructor creates empty object', (t) => {
   const obj = new OffHeapObject()

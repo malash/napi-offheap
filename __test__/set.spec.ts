@@ -1,6 +1,6 @@
 import test from 'ava'
 
-import { OffHeapSet } from '../index'
+import { OffHeapSet } from '../entry'
 
 test('OffHeapSet: constructor creates empty set', (t) => {
   const set = new OffHeapSet()
@@ -138,4 +138,25 @@ test('OffHeapSet: add returns this for chaining', (t) => {
   const set = new OffHeapSet()
   const ret = set.add(1)
   t.is(ret, set)
+})
+
+test('OffHeapSet: [Symbol.iterator] yields values in insertion order', (t) => {
+  const set = new OffHeapSet()
+  set.add(1).add(2).add(3)
+  t.deepEqual([...set], [1, 2, 3])
+})
+
+test('OffHeapSet: for...of works', (t) => {
+  const set = new OffHeapSet()
+  set.add('a').add('b')
+  const result: unknown[] = []
+  for (const v of set) {
+    result.push(v)
+  }
+  t.deepEqual(result, ['a', 'b'])
+})
+
+test('OffHeapSet: [Symbol.iterator] on empty set yields nothing', (t) => {
+  const set = new OffHeapSet()
+  t.deepEqual([...set], [])
 })

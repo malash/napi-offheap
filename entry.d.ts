@@ -27,6 +27,7 @@ export declare class OffHeapArray<T = unknown> {
   get length(): number
   splice(start: number, deleteCount: number, items: T[]): T[]
   forEach(callback: (value: T, index: number) => unknown): void
+  [Symbol.iterator](): IterableIterator<T>
 }
 
 export declare class OffHeapMap<K extends Primitive = Primitive, V = unknown> {
@@ -41,6 +42,7 @@ export declare class OffHeapMap<K extends Primitive = Primitive, V = unknown> {
   values(): V[]
   entries(): [K, V][]
   forEach(callback: (value: V, key: K) => unknown): void
+  [Symbol.iterator](): IterableIterator<[K, V]>
 }
 
 export declare class OffHeapSet<T extends Primitive = Primitive> {
@@ -53,4 +55,5 @@ export declare class OffHeapSet<T extends Primitive = Primitive> {
   values(): T[]
   /** callback receives (value, value) per the JS Set.forEach spec */
   forEach(callback: (value: T, _value: T) => unknown): void
+  [Symbol.iterator](): IterableIterator<T>
 }

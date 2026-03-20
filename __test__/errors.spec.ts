@@ -1,6 +1,6 @@
 import test from 'ava'
 
-import { OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet } from '../index'
+import { OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet } from '../entry'
 
 // ─── Plain JS object rejection ───────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import test from 'ava'
 
-import { OffHeapArray } from '../index'
+import { OffHeapArray } from '../entry'
 
 test('OffHeapArray: constructor creates empty array', (t) => {
   const arr = new OffHeapArray()
@@ -242,4 +242,25 @@ test('OffHeapArray: stores all primitive types', (t) => {
   t.is(arr.get(3), true)
   t.is(arr.get(4), null)
   t.is(arr.get(5), undefined)
+})
+
+test('OffHeapArray: [Symbol.iterator] yields values in index order', (t) => {
+  const arr = new OffHeapArray()
+  arr.push(10).push(20).push(30)
+  t.deepEqual([...arr], [10, 20, 30])
+})
+
+test('OffHeapArray: for...of works', (t) => {
+  const arr = new OffHeapArray()
+  arr.push('a').push('b')
+  const result: unknown[] = []
+  for (const v of arr) {
+    result.push(v)
+  }
+  t.deepEqual(result, ['a', 'b'])
+})
+
+test('OffHeapArray: [Symbol.iterator] on empty array yields nothing', (t) => {
+  const arr = new OffHeapArray()
+  t.deepEqual([...arr], [])
 })
