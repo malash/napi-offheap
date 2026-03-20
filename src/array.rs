@@ -30,8 +30,8 @@ impl OffHeapArray {
   #[napi]
   pub fn pop(&self, env: Env) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
-    let mut guard = self.inner.lock().map_err(lock_err)?;
-    match guard.pop() {
+    let val = self.inner.lock().map_err(lock_err)?.pop();
+    match val {
       None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
       Some(v) => val_to_unknown(raw_env, &v),
     }
@@ -40,10 +40,10 @@ impl OffHeapArray {
   #[napi]
   pub fn get(&self, env: Env, index: u32) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
-    let guard = self.inner.lock().map_err(lock_err)?;
-    match guard.get(index as usize) {
+    let val = self.inner.lock().map_err(lock_err)?.get(index as usize).cloned();
+    match val {
       None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
-      Some(v) => val_to_unknown(raw_env, v),
+      Some(v) => val_to_unknown(raw_env, &v),
     }
   }
 

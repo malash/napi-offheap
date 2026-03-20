@@ -34,10 +34,10 @@ impl OffHeapMap {
   pub fn get(&self, env: Env, key: Unknown<'_>) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
     let k = js_to_primitive(key)?;
-    let guard = self.inner.lock().map_err(lock_err)?;
-    match guard.get(&k) {
+    let val = self.inner.lock().map_err(lock_err)?.get(&k).cloned();
+    match val {
       None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
-      Some(v) => val_to_unknown(raw_env, v),
+      Some(v) => val_to_unknown(raw_env, &v),
     }
   }
 
