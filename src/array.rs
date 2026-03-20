@@ -101,21 +101,16 @@ impl OffHeapArray {
     callback: Function<'_, FnArgs<(Unknown<'static>, Unknown<'static>)>, Unknown<'static>>,
   ) -> napi::Result<()> {
     let raw_env = env.raw();
-    let mut index = 0usize;
-    loop {
-      let entry = {
-        let guard = self.inner.lock().map_err(lock_err)?;
-        guard.get(index).cloned()
-      };
-      match entry {
-        None => break,
-        Some(val) => {
-          let js_val = val_to_unknown(raw_env, &val)?;
-          let js_idx =
-            unsafe { to_unknown(raw_env, u32::to_napi_value(raw_env, index as u32)?) };
-          callback.call(FnArgs { data: (js_val, js_idx) })?;
-          index += 1;
-        }
+    // Capture length upfront: matches JS Array.prototype.forEach which does not
+    // visit elements pushed after the iteration starts.
+    let initial_length = self.inner.lock().map_err(lock_err)?.len();
+    for index in 0..initial_length {
+      let val = self.inner.lock().map_err(lock_err)?.get(index).cloned();
+      if let Some(val) = val {
+        let js_val = val_to_unknown(raw_env, &val)?;
+        let js_idx =
+          unsafe { to_unknown(raw_env, u32::to_napi_value(raw_env, index as u32)?) };
+        callback.call(FnArgs { data: (js_val, js_idx) })?;
       }
     }
     Ok(())

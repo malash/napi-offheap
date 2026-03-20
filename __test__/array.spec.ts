@@ -189,6 +189,38 @@ test('OffHeapArray: forEach callback can mutate elements without deadlock', (t) 
   t.is(arr.get(2), 20)
 })
 
+test('OffHeapArray: forEach does not visit elements pushed during iteration', (t) => {
+  // Matches JS Array.prototype.forEach: length is captured before iteration starts,
+  // so elements pushed inside the callback are never visited.
+  const arr = new OffHeapArray<number>()
+  arr.push(1).push(2).push(3)
+  const visited: number[] = []
+  arr.forEach((value) => {
+    visited.push(value as number)
+    arr.push(99)
+  })
+  t.deepEqual(visited, [1, 2, 3])
+  t.is(arr.length, 6)
+})
+
+test('OffHeapArray: forEach skips index when element no longer exists due to shrink', (t) => {
+  // If the array is shortened during iteration (pop removes the last element),
+  // indices that fall beyond the new length are silently skipped.
+  // initial_length = 3; after pop at index 0, arr = [1, 2] (length 2)
+  // index 0: visits 1, pops 3 → arr = [1, 2]
+  // index 1: visits 2
+  // index 2: get(2) = undefined → skipped
+  const arr = new OffHeapArray<number>()
+  arr.push(1).push(2).push(3)
+  const visited: number[] = []
+  arr.forEach((value, index) => {
+    visited.push(value as number)
+    if ((index as number) === 0) arr.pop()
+  })
+  t.deepEqual(visited, [1, 2])
+  t.is(arr.length, 2)
+})
+
 test('OffHeapArray: forEach on empty array does not invoke callback', (t) => {
   const arr = new OffHeapArray()
   let called = false
