@@ -1,7 +1,8 @@
 use indexmap::{IndexMap, IndexSet};
 use napi_derive::napi;
 use ordered_float::OrderedFloat;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 // f64 is wrapped in OrderedFloat to satisfy Hash + Eq (required for Map keys and Set elements).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -5,13 +5,6 @@ use std::sync::Arc;
 
 use crate::types::{OffHeapArray, OffHeapMap, OffHeapObject, OffHeapSet, OffHeapValue, PrimitiveValue};
 
-pub(crate) fn lock_err(e: impl std::fmt::Display) -> napi::Error {
-  napi::Error::new(
-    napi::Status::GenericFailure,
-    format!("lock poisoned: {e}"),
-  )
-}
-
 pub(crate) fn js_to_persistent(env: &Env, val: Unknown<'_>) -> napi::Result<OffHeapValue> {
   if val.get_type()? == ValueType::Object {
     let raw_env = env.raw();

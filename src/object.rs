@@ -2,9 +2,10 @@ use indexmap::IndexMap;
 use napi::bindgen_prelude::*;
 use napi::Env;
 use napi_derive::napi;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
-use crate::convert::{js_to_object_key, js_to_persistent, lock_err, to_unknown, val_to_unknown};
+use crate::convert::{js_to_object_key, js_to_persistent, to_unknown, val_to_unknown};
 use crate::types::{OffHeapObject, OffHeapValue};
 
 #[napi]
@@ -26,7 +27,7 @@ impl OffHeapObject {
   ) -> napi::Result<Object<'a>> {
     let k = js_to_object_key(key)?;
     let v = js_to_persistent(&env, value)?;
-    self.inner.lock().map_err(lock_err)?.insert(k, v);
+    self.inner.lock().insert(k, v);
     Ok(this.object)
   }
 
@@ -34,7 +35,7 @@ impl OffHeapObject {
   pub fn get(&self, env: Env, key: Unknown<'_>) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
     let k = js_to_object_key(key)?;
-    let val = self.inner.lock().map_err(lock_err)?.get(&k).cloned();
+    let val = self.inner.lock().get(&k).cloned();
     match val {
       None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
       Some(v) => val_to_unknown(raw_env, &v),
@@ -44,35 +45,35 @@ impl OffHeapObject {
   #[napi]
   pub fn has(&self, key: Unknown<'_>) -> napi::Result<bool> {
     let k = js_to_object_key(key)?;
-    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&k))
+    Ok(self.inner.lock().contains_key(&k))
   }
 
   #[napi]
   pub fn delete(&self, key: Unknown<'_>) -> napi::Result<bool> {
     let k = js_to_object_key(key)?;
-    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&k).is_some())
+    Ok(self.inner.lock().shift_remove(&k).is_some())
   }
 
   #[napi]
   pub fn clear(&self) -> napi::Result<()> {
-    self.inner.lock().map_err(lock_err)?.clear();
+    self.inner.lock().clear();
     Ok(())
   }
 
   #[napi(getter)]
   pub fn size(&self) -> napi::Result<u32> {
-    Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
+    Ok(self.inner.lock().len() as u32)
   }
 
   #[napi]
   pub fn keys(&self) -> napi::Result<Vec<String>> {
-    Ok(self.inner.lock().map_err(lock_err)?.keys().cloned().collect())
+    Ok(self.inner.lock().keys().cloned().collect())
   }
 
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let values: Vec<OffHeapValue> = self.inner.lock().map_err(lock_err)?.values().cloned().collect();
+    let values: Vec<OffHeapValue> = self.inner.lock().values().cloned().collect();
     values.iter().map(|v| val_to_unknown(raw_env, v)).collect()
   }
 
@@ -80,7 +81,7 @@ impl OffHeapObject {
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
     let entries: Vec<(String, OffHeapValue)> =
-      self.inner.lock().map_err(lock_err)?.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+      self.inner.lock().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     entries
       .iter()
       .map(|(k, v)| {
@@ -105,7 +106,7 @@ impl OffHeapObject {
     let mut next_index = 0usize;
     loop {
       let entry = {
-        let guard = self.inner.lock().map_err(lock_err)?;
+        let guard = self.inner.lock();
         guard.get_index(next_index).map(|(k, v)| (k.clone(), v.clone()))
       };
       match entry {
@@ -117,7 +118,6 @@ impl OffHeapObject {
           next_index = self
             .inner
             .lock()
-            .map_err(lock_err)?
             .get_index_of(&key)
             .map_or(next_index, |pos| pos + 1);
         }

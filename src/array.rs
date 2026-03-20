@@ -1,9 +1,10 @@
 use napi::bindgen_prelude::*;
 use napi::Env;
 use napi_derive::napi;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
-use crate::convert::{js_to_persistent, lock_err, to_unknown, val_to_unknown};
+use crate::convert::{js_to_persistent, to_unknown, val_to_unknown};
 use crate::types::{OffHeapArray, OffHeapValue};
 
 #[napi]
@@ -23,14 +24,14 @@ impl OffHeapArray {
     value: Unknown<'_>,
   ) -> napi::Result<Object<'a>> {
     let v = js_to_persistent(&env, value)?;
-    self.inner.lock().map_err(lock_err)?.push(v);
+    self.inner.lock().push(v);
     Ok(this.object)
   }
 
   #[napi]
   pub fn pop(&self, env: Env) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
-    let val = self.inner.lock().map_err(lock_err)?.pop();
+    let val = self.inner.lock().pop();
     match val {
       None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
       Some(v) => val_to_unknown(raw_env, &v),
@@ -40,7 +41,7 @@ impl OffHeapArray {
   #[napi]
   pub fn get(&self, env: Env, index: u32) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
-    let val = self.inner.lock().map_err(lock_err)?.get(index as usize).cloned();
+    let val = self.inner.lock().get(index as usize).cloned();
     match val {
       None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
       Some(v) => val_to_unknown(raw_env, &v),
@@ -50,7 +51,7 @@ impl OffHeapArray {
   #[napi]
   pub fn set(&self, env: Env, index: u32, value: Unknown<'_>) -> napi::Result<()> {
     let v = js_to_persistent(&env, value)?;
-    let mut guard = self.inner.lock().map_err(lock_err)?;
+    let mut guard = self.inner.lock();
     let idx = index as usize;
     if idx >= guard.len() {
       return Err(napi::Error::new(
@@ -64,7 +65,7 @@ impl OffHeapArray {
 
   #[napi(getter)]
   pub fn length(&self) -> napi::Result<u32> {
-    Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
+    Ok(self.inner.lock().len() as u32)
   }
 
   // Items are converted before the lock is acquired to avoid holding the lock across JS calls.
@@ -82,7 +83,7 @@ impl OffHeapArray {
       .map(|v| js_to_persistent(&env, v))
       .collect::<napi::Result<_>>()?;
 
-    let mut guard = self.inner.lock().map_err(lock_err)?;
+    let mut guard = self.inner.lock();
     let len = guard.len();
     let start = (start as usize).min(len);
     let end = (start + delete_count as usize).min(len);
@@ -103,9 +104,9 @@ impl OffHeapArray {
     let raw_env = env.raw();
     // Capture length upfront: matches JS Array.prototype.forEach which does not
     // visit elements pushed after the iteration starts.
-    let initial_length = self.inner.lock().map_err(lock_err)?.len();
+    let initial_length = self.inner.lock().len();
     for index in 0..initial_length {
-      let val = self.inner.lock().map_err(lock_err)?.get(index).cloned();
+      let val = self.inner.lock().get(index).cloned();
       if let Some(val) = val {
         let js_val = val_to_unknown(raw_env, &val)?;
         let js_idx =

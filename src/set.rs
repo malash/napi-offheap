@@ -2,9 +2,10 @@ use indexmap::IndexSet;
 use napi::bindgen_prelude::*;
 use napi::Env;
 use napi_derive::napi;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
-use crate::convert::{js_to_primitive, lock_err, prim_to_unknown};
+use crate::convert::{js_to_primitive, prim_to_unknown};
 use crate::types::{OffHeapSet, PrimitiveValue};
 
 #[napi]
@@ -23,37 +24,37 @@ impl OffHeapSet {
     value: Unknown<'_>,
   ) -> napi::Result<Object<'a>> {
     let primitive = js_to_primitive(value)?;
-    self.inner.lock().map_err(lock_err)?.insert(primitive);
+    self.inner.lock().insert(primitive);
     Ok(this.object)
   }
 
   #[napi]
   pub fn has(&self, value: Unknown<'_>) -> napi::Result<bool> {
     let primitive = js_to_primitive(value)?;
-    Ok(self.inner.lock().map_err(lock_err)?.contains(&primitive))
+    Ok(self.inner.lock().contains(&primitive))
   }
 
   #[napi]
   pub fn delete(&self, value: Unknown<'_>) -> napi::Result<bool> {
     let primitive = js_to_primitive(value)?;
-    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&primitive))
+    Ok(self.inner.lock().shift_remove(&primitive))
   }
 
   #[napi]
   pub fn clear(&self) -> napi::Result<()> {
-    self.inner.lock().map_err(lock_err)?.clear();
+    self.inner.lock().clear();
     Ok(())
   }
 
   #[napi(getter)]
   pub fn size(&self) -> napi::Result<u32> {
-    Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
+    Ok(self.inner.lock().len() as u32)
   }
 
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
-    let values: Vec<PrimitiveValue> = self.inner.lock().map_err(lock_err)?.iter().cloned().collect();
+    let values: Vec<PrimitiveValue> = self.inner.lock().iter().cloned().collect();
     values.iter().map(|p| prim_to_unknown(raw_env, p)).collect()
   }
 
@@ -68,7 +69,7 @@ impl OffHeapSet {
     let mut next_index = 0usize;
     loop {
       let entry = {
-        let guard = self.inner.lock().map_err(lock_err)?;
+        let guard = self.inner.lock();
         guard.get_index(next_index).cloned()
       };
       match entry {
@@ -80,7 +81,6 @@ impl OffHeapSet {
           next_index = self
             .inner
             .lock()
-            .map_err(lock_err)?
             .get_index_of(&primitive)
             .map_or(next_index, |pos| pos + 1);
         }

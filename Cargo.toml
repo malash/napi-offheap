@@ -13,6 +13,7 @@ napi = "3.0.0"
 napi-derive = "3.0.0"
 indexmap = "2"
 ordered-float = "4"
+parking_lot = "0.12"
 
 [build-dependencies]
 napi-build = "2"
