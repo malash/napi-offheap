@@ -1,5 +1,7 @@
 # napi-offheap
 
+[English](./README.md) | [中文](./README.zh-CN.md)
+
 Off-heap containers for Node.js — store large, long-lived data on the Rust heap so V8's Mark-Compact GC never has to scan it.
 
 > **⚠️ Vibe coded — use with caution.**
@@ -132,7 +134,7 @@ set.values()  // → number[]
 set.forEach((value: number, _value: number) => { /* ... */ })
 ```
 
-## Nesting containers
+### Nesting containers
 
 With generics, nested containers are fully typed — no casts needed:
 
@@ -153,7 +155,7 @@ inner.get('a') // → 99
 
 > **Warning:** circular references (`a.set('b', b); b.set('a', a)`) cause memory leaks — `Arc` cannot break reference cycles.
 
-## Accepted value types
+### Accepted value types
 
 | Type                                   | Map/Array/Object value | Object key | Map key | Set element |
 | -------------------------------------- | ---------------------- | ---------- | ------- | ----------- |
@@ -182,3 +184,5 @@ yarn install
 yarn build
 yarn test
 ```
+
+Built with [napi-rs](https://github.com/napi-rs/napi-rs), a framework for building pre-compiled Node.js addons in Rust.
