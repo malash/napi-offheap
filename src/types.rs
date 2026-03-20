@@ -28,7 +28,7 @@ pub enum OffHeapValue {
 }
 
 /// IndexMap preserves insertion order, matching JS Map semantics.
-pub type SharedMap = IndexMap<String, OffHeapValue>;
+pub type SharedMap = IndexMap<PrimitiveValue, OffHeapValue>;
 /// Plain Vec.
 pub type SharedArray = Vec<OffHeapValue>;
 /// IndexSet preserves insertion order, matching JS Set semantics.

@@ -18,87 +18,100 @@ npm install napi-offheap
 
 ## API
 
-### `OffHeapMap`
+### `OffHeapMap<K, V>`
 
-Ordered key-value map (preserves insertion order, like JS `Map`).
+Ordered key-value map (preserves insertion order, like JS `Map`). Keys can be any primitive: `string`, `number`, `boolean`, `null`, or `undefined`.
 
 ```ts
-const map = new OffHeapMap()
+import { OffHeapMap } from 'napi-offheap'
 
-map.set('key', 'value') // returns this — chainable
-map.set('n', 42).set('ok', true)
+const map = new OffHeapMap<string, number>()
 
-map.get('key') // → 'value'
-map.has('key') // → true
-map.delete('key') // → true (false if not found)
+map.set('a', 1).set('b', 2) // returns this — chainable
+
+map.get('a')    // → 1  (type: number | undefined)
+map.has('a')    // → true
+map.delete('a') // → true (false if not found)
 map.clear()
 
-map.size // getter → number
-map.keys() // → string[]
-map.values() // → unknown[]
-map.entries() // → [string, unknown][]
+map.size       // getter → number
+map.keys()     // → string[]
+map.values()   // → number[]
+map.entries()  // → [string, number][]
 
-map.forEach((value, key) => {
+map.forEach((value: number, key: string) => {
   /* ... */
 })
+
+// Number keys work too
+const byId = new OffHeapMap<number, string>()
+byId.set(1, 'alice').set(2, 'bob')
+byId.get(1) // → 'alice'
 ```
 
-### `OffHeapArray`
+### `OffHeapArray<T>`
 
 Ordered list with O(1) push/pop and O(n) splice.
 
 ```ts
-const arr = new OffHeapArray()
+import { OffHeapArray } from 'napi-offheap'
+
+const arr = new OffHeapArray<number>()
 
 arr.push(1).push(2).push(3) // chainable
-arr.pop() // → 3
-arr.get(0) // → 1
+arr.pop()   // → 3  (type: number | undefined)
+arr.get(0)  // → 1  (type: number | undefined)
 arr.set(0, 99) // throws if index out of bounds
-arr.length // getter → number
+arr.length  // getter → number
 
-// splice(start, deleteCount, ...items) → removed elements
-arr.splice(1, 1, 'a', 'b')
+// splice(start, deleteCount, items) → removed elements
+const removed: number[] = arr.splice(1, 1, [10, 20])
 
-arr.forEach((value, index) => {
+arr.forEach((value: number, index: number) => {
   /* ... */
 })
 ```
 
-### `OffHeapSet`
+### `OffHeapSet<T>`
 
 Ordered set of primitive values (preserves insertion order, like JS `Set`).
 
-Only accepts primitives: `null`, `undefined`, `boolean`, `number`, `string`, or `OffHeapPrimitive`.
+`T` is constrained to `Primitive = string | number | boolean | null | undefined`.
 
 ```ts
-const set = new OffHeapSet()
+import { OffHeapSet } from 'napi-offheap'
 
-set.add(1).add('hello').add(true) // chainable
-set.has(1) // → true
+const set = new OffHeapSet<number>()
+
+set.add(1).add(2).add(3) // chainable
+set.has(1)    // → true
 set.delete(1) // → true
 set.clear()
 
-set.size // getter → number
-set.values() // → unknown[]
+set.size      // getter → number
+set.values()  // → number[]
 
-set.forEach((value, value) => {
-  /* with JS Set.forEach semantics */
+// callback receives (value, value) per JS Set.forEach spec
+set.forEach((value: number, _value: number) => {
+  /* ... */
 })
 ```
 
 ## Nesting containers
 
-Containers can be nested freely. A nested container shares its underlying data — mutations propagate instantly:
+With generics, nested containers are fully typed — no casts needed:
 
 ```ts
-const inner = new OffHeapMap()
+import { OffHeapMap } from 'napi-offheap'
+
+const inner = new OffHeapMap<number>()
 inner.set('a', 1)
 
-const outer = new OffHeapMap()
+const outer = new OffHeapMap<OffHeapMap<number>>()
 outer.set('inner', inner)
 
-const ref = outer.get('inner') // same Arc as `inner`
-ref.set('a', 99)
+const ref = outer.get('inner') // type: OffHeapMap<number> | undefined
+ref?.set('a', 99)
 
 inner.get('a') // → 99
 ```
@@ -107,16 +120,16 @@ inner.get('a') // → 99
 
 ## Accepted value types
 
-| Type                                   | Map/Array     | Set           |
-| -------------------------------------- | ------------- | ------------- |
-| `null` / `undefined`                   | ✓             | ✓             |
-| `boolean`                              | ✓             | ✓             |
-| `number`                               | ✓             | ✓             |
-| `string`                               | ✓             | ✓             |
-| `OffHeapMap`                           | ✓             | ✗             |
-| `OffHeapArray`                         | ✓             | ✗             |
-| `OffHeapSet`                           | ✓             | ✗             |
-| Plain JS objects / functions / Symbols | ✗             | ✗             |
+| Type                                   | Map/Array | Set |
+| -------------------------------------- | --------- | --- |
+| `null` / `undefined`                   | ✓         | ✓   |
+| `boolean`                              | ✓         | ✓   |
+| `number`                               | ✓         | ✓   |
+| `string`                               | ✓         | ✓   |
+| `OffHeapMap`                           | ✓         | ✗   |
+| `OffHeapArray`                         | ✓         | ✗   |
+| `OffHeapSet`                           | ✓         | ✗   |
+| Plain JS objects / functions / Symbols | ✗         | ✗   |
 
 ## Build from source
 

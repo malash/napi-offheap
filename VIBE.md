@@ -75,7 +75,7 @@ pub enum OffHeapValue {
   Set(Arc<Mutex<SharedSet>>),
 }
 
-pub type SharedMap   = IndexMap<String, OffHeapValue>;  // 保证插入顺序
+pub type SharedMap   = IndexMap<PrimitiveValue, OffHeapValue>;  // 保证插入顺序，key 为任意基本类型
 pub type SharedArray = Vec<OffHeapValue>;
 pub type SharedSet   = IndexSet<PrimitiveValue>;           // 保证插入顺序，元素限基本类型
 ```
@@ -447,32 +447,36 @@ impl OffHeapMap {
     &self,
     this: This<'a>,
     env: Env,
-    key: String,
+    key: Unknown<'_>,
     value: Unknown<'_>,
   ) -> napi::Result<Object<'a>> {
+    let k = js_to_primitive(key)?;
     let v = js_to_persistent(&env, value)?;
-    self.inner.lock().map_err(lock_err)?.insert(key, v);
+    self.inner.lock().map_err(lock_err)?.insert(k, v);
     Ok(this.object)
   }
 
   #[napi]
-  pub fn get(&self, env: Env, key: String) -> napi::Result<Unknown<'static>> {
+  pub fn get(&self, env: Env, key: Unknown<'_>) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
+    let k = js_to_primitive(key)?;
     let guard = self.inner.lock().map_err(lock_err)?;
-    match guard.get(&key) {
+    match guard.get(&k) {
       None    => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
       Some(v) => val_to_unknown(raw_env, v),
     }
   }
 
   #[napi]
-  pub fn has(&self, key: String) -> napi::Result<bool> {
-    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&key))
+  pub fn has(&self, key: Unknown<'_>) -> napi::Result<bool> {
+    let k = js_to_primitive(key)?;
+    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&k))
   }
 
   #[napi]
-  pub fn delete(&self, key: String) -> napi::Result<bool> {
-    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&key).is_some())
+  pub fn delete(&self, key: Unknown<'_>) -> napi::Result<bool> {
+    let k = js_to_primitive(key)?;
+    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&k).is_some())
   }
 
   #[napi]
@@ -487,8 +491,10 @@ impl OffHeapMap {
   }
 
   #[napi]
-  pub fn keys(&self) -> napi::Result<Vec<String>> {
-    Ok(self.inner.lock().map_err(lock_err)?.keys().cloned().collect())
+  pub fn keys(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
+    let raw_env = env.raw();
+    let guard = self.inner.lock().map_err(lock_err)?;
+    guard.keys().map(|k| prim_to_unknown(raw_env, k)).collect()
   }
 
   #[napi]
@@ -499,16 +505,15 @@ impl OffHeapMap {
   }
 
   // entries 返回 Vec<Unknown<'static>>，每个元素是一个 2 元素 JS 数组 [key, value]。
-  // 不能返回 Vec<(String, Unknown)>，因为 Rust tuple 在 napi 3 中不实现 ToNapiValue。
-  #[napi(ts_return_type = "[string, unknown][]")]
+  // 不能返回 Vec<(Unknown, Unknown)>，因为 Rust tuple 在 napi 3 中不实现 ToNapiValue。
+  #[napi(ts_return_type = "[unknown, unknown][]")]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
     let guard = self.inner.lock().map_err(lock_err)?;
     guard
       .iter()
       .map(|(k, v)| {
-        let raw_key = unsafe { String::to_napi_value(raw_env, k.clone())? };
-        let js_key  = unsafe { to_unknown(raw_env, raw_key) };
+        let js_key  = prim_to_unknown(raw_env, k)?;
         let js_val  = val_to_unknown(raw_env, v)?;
         let env_obj = Env::from_raw(raw_env);
         let arr     = Array::from_vec(&env_obj, vec![js_key, js_val])?;
@@ -540,7 +545,7 @@ impl OffHeapMap {
         None => break,
         Some((key, val)) => {
           let js_val = val_to_unknown(raw_env, &val)?;
-          let js_key = unsafe { to_unknown(raw_env, String::to_napi_value(raw_env, key)?) };
+          let js_key = prim_to_unknown(raw_env, &key)?;
           callback.call(FnArgs { data: (js_val, js_key) })?;
           index += 1;
         }

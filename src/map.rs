@@ -4,7 +4,7 @@ use napi::Env;
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 
-use crate::convert::{js_to_persistent, lock_err, to_unknown, val_to_unknown};
+use crate::convert::{js_to_persistent, js_to_primitive, lock_err, prim_to_unknown, to_unknown, val_to_unknown};
 use crate::types::OffHeapMap;
 
 #[napi]
@@ -23,20 +23,22 @@ impl OffHeapMap {
     &self,
     this: This<'a>,
     env: Env,
-    key: String,
+    key: Unknown<'_>,
     value: Unknown<'_>,
   ) -> napi::Result<Object<'a>> {
+    let k = js_to_primitive(key)?;
     let v = js_to_persistent(&env, value)?;
-    self.inner.lock().map_err(lock_err)?.insert(key, v);
+    self.inner.lock().map_err(lock_err)?.insert(k, v);
     Ok(this.object)
   }
 
   /// map.get(key) → OffHeapXxx | primitive | undefined
   #[napi]
-  pub fn get(&self, env: Env, key: String) -> napi::Result<Unknown<'static>> {
+  pub fn get(&self, env: Env, key: Unknown<'_>) -> napi::Result<Unknown<'static>> {
     let raw_env = env.raw();
+    let k = js_to_primitive(key)?;
     let guard = self.inner.lock().map_err(lock_err)?;
-    match guard.get(&key) {
+    match guard.get(&k) {
       None => Ok(unsafe { to_unknown(raw_env, <()>::to_napi_value(raw_env, ())?) }),
       Some(v) => val_to_unknown(raw_env, v),
     }
@@ -44,21 +46,16 @@ impl OffHeapMap {
 
   /// map.has(key) → boolean
   #[napi]
-  pub fn has(&self, key: String) -> napi::Result<bool> {
-    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&key))
+  pub fn has(&self, key: Unknown<'_>) -> napi::Result<bool> {
+    let k = js_to_primitive(key)?;
+    Ok(self.inner.lock().map_err(lock_err)?.contains_key(&k))
   }
 
   /// map.delete(key) → boolean
   #[napi]
-  pub fn delete(&self, key: String) -> napi::Result<bool> {
-    Ok(
-      self
-        .inner
-        .lock()
-        .map_err(lock_err)?
-        .shift_remove(&key)
-        .is_some(),
-    )
+  pub fn delete(&self, key: Unknown<'_>) -> napi::Result<bool> {
+    let k = js_to_primitive(key)?;
+    Ok(self.inner.lock().map_err(lock_err)?.shift_remove(&k).is_some())
   }
 
   /// map.clear()
@@ -74,21 +71,15 @@ impl OffHeapMap {
     Ok(self.inner.lock().map_err(lock_err)?.len() as u32)
   }
 
-  /// map.keys() → string[]
+  /// map.keys() → K[]
   #[napi]
-  pub fn keys(&self) -> napi::Result<Vec<String>> {
-    Ok(
-      self
-        .inner
-        .lock()
-        .map_err(lock_err)?
-        .keys()
-        .cloned()
-        .collect(),
-    )
+  pub fn keys(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
+    let raw_env = env.raw();
+    let guard = self.inner.lock().map_err(lock_err)?;
+    guard.keys().map(|k| prim_to_unknown(raw_env, k)).collect()
   }
 
-  /// map.values() → unknown[]
+  /// map.values() → V[]
   #[napi]
   pub fn values(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
@@ -99,16 +90,15 @@ impl OffHeapMap {
       .collect()
   }
 
-  /// map.entries() → [string, unknown][]
-  #[napi(ts_return_type = "[string, unknown][]")]
+  /// map.entries() → [K, V][]
+  #[napi(ts_return_type = "[unknown, unknown][]")]
   pub fn entries(&self, env: Env) -> napi::Result<Vec<Unknown<'static>>> {
     let raw_env = env.raw();
     let guard = self.inner.lock().map_err(lock_err)?;
     guard
       .iter()
       .map(|(k, v)| {
-        let raw_key = unsafe { String::to_napi_value(raw_env, k.clone())? };
-        let js_key = unsafe { to_unknown(raw_env, raw_key) };
+        let js_key = prim_to_unknown(raw_env, k)?;
         let js_val = val_to_unknown(raw_env, v)?;
         let env_obj = Env::from_raw(raw_env);
         let arr = Array::from_vec(&env_obj, vec![js_key, js_val])?;
@@ -144,8 +134,7 @@ impl OffHeapMap {
         None => break,
         Some((key, val)) => {
           let js_val = val_to_unknown(raw_env, &val)?;
-          let js_key =
-            unsafe { to_unknown(raw_env, String::to_napi_value(raw_env, key)?) };
+          let js_key = prim_to_unknown(raw_env, &key)?;
           // Lock is free; callback can mutate the map without deadlock.
           callback.call(FnArgs { data: (js_val, js_key) })?;
           index += 1;
